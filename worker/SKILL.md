@@ -38,6 +38,12 @@ meantime.
 
 ---
 
+**Eurocontrol board work uses a different skill entirely** —
+`worker-eurocontrol`, not this one. That environment only has `claude`
+installed as an agent kind (no OpenCode/Grok/Antigravity), and is a single
+hardcoded board with no repo routing, so the dedicated skill drops all of
+that machinery instead of trying to degrade gracefully here.
+
 ## Prerequisites
 
 - `HERDR_ENV=1` (required — this skill runs inside Herdr).

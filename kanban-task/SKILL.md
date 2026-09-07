@@ -39,6 +39,12 @@ meantime.
 
 ---
 
+**Eurocontrol board work uses a different skill entirely** —
+`kanban-task-eurocontrol`, not this one. That environment only has `claude`
+installed as an agent kind (no OpenCode/Grok/Antigravity), and is a single
+hardcoded board with no repo routing, so the dedicated skill drops all of
+that machinery instead of trying to degrade gracefully here.
+
 ## Prerequisites
 
 - Herdr CLI installed and `HERDR_ENV=1` in the environment (required for

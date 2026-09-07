@@ -32,20 +32,28 @@ Restart Claude Code (or start a new session) so it picks up the new skills.
 | `commit-push` | fmt/lint/tfsec gate, branch, commit, secret-scan, push, and open an Azure DevOps PR. |
 | `debug-error` | Dispatches an error to two parallel Herdr agents for independent root-cause diagnosis (diagnosis only, no fix applied). |
 | `kanban-task` | Discovery → solution design → multi-agent Herdr verification → pitch → approval → push to the kanban board. |
+| `kanban-task-eurocontrol` | Eurocontrol-environment variant of `kanban-task` — Claude is the only agent kind installed there, single hardcoded board, no repo routing. |
 | `make_pr` | Branch + fmt/lint/validate gate + commit + Azure DevOps PR. |
 | `product-owner` | Kanban board maintenance: pitch ideas, groom board health, author cards. |
 | `setup-kanban-board` | Starts the taskwarrior-kanban board and onboards a project onto it. |
 | `termius` | Reconnects Tailscale without it hijacking routes/DNS. |
 | `update-readme` | Rewrites a repo's README to a short, consistent template. |
 | `worker` | Executes a kanban task via multi-agent Herdr orchestration with human approval gates. |
+| `worker-eurocontrol` | Eurocontrol-environment variant of `worker` — Claude-only, single hardcoded board, no repo routing. |
 
 ## Prerequisites
 
 Some skills assume tools/services not covered by this repo itself — check the
 individual `SKILL.md`'s own "Prerequisites" section before using it:
 
-- **Herdr CLI** + `HERDR_ENV=1` — `debug-error`, `kanban-task`, `worker`.
+- **Herdr CLI** + `HERDR_ENV=1` — `debug-error`, `kanban-task`,
+  `kanban-task-eurocontrol`, `worker`, `worker-eurocontrol`.
 - **Taskwarrior + taskwarrior-kanban** running at `http://127.0.0.1:8787/` —
-  `kanban-task`, `product-owner`, `setup-kanban-board`, `worker`.
+  `kanban-task`, `kanban-task-eurocontrol`, `product-owner`,
+  `setup-kanban-board`, `worker`, `worker-eurocontrol`.
 - **Azure CLI** (`az`) — `commit-push`, `make_pr` (Azure DevOps PRs).
 - **Tailscale** — `termius`.
+- `kanban-task-eurocontrol` / `worker-eurocontrol` assume an environment
+  where **only Claude** is installed as a Herdr agent kind (no OpenCode, no
+  Grok, no Google Antigravity) — use the plain `kanban-task`/`worker` skills
+  everywhere else.
