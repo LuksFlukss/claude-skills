@@ -47,7 +47,7 @@ that machinery instead of trying to degrade gracefully here.
 ## Prerequisites
 
 - `HERDR_ENV=1` (required — this skill runs inside Herdr).
-- `~/guiñote/scripts/backlog` wrapper (project-agnostic; scopes every call via
+- `~/.claude/skills/scripts/backlog` wrapper (project-agnostic; scopes every call via
   `BACKLOG_PROJECT`, see Board Routing below).
 - Taskwarrior + taskwarrior-kanban backend (`~/.task`, shared across both
   boards — they're lanes on the same server, distinguished by Taskwarrior's
@@ -64,7 +64,7 @@ The shared taskwarrior-kanban server hosts **two** boards, selected via
 | `BACKLOG_PROJECT` | Board name |
 |--------------------|------------|
 | `guiñotazo` | Guiñotazo |
-| `universiteit-utrecht` | Universiteit Utrecht |
+| `Universiteit Utrecht` | Universiteit Utrecht |
 
 Unlike `kanban-task`'s push step (which can infer the board from the repo
 name), **`worker` never auto-picks a board when selecting a task to pull.**
@@ -180,7 +180,7 @@ directly by you, exactly as elsewhere in this skill.
 
 ### Phase 0 — Ensure Board & Prerequisites
 
-1. Verify `HERDR_ENV=1` and `~/guiñote/scripts/backlog` exists. Stop if not.
+1. Verify `HERDR_ENV=1` and `~/.claude/skills/scripts/backlog` exists. Stop if not.
 2. Ensure kanban board is up (`curl http://127.0.0.1:8787/` → 200). If not, run
    `/setup_kanban_board`.
 
@@ -193,8 +193,8 @@ resolve the board before anything else:
 1. **Read both boards** so the question in step 2 is informed, not a blind
    guess:
    ```bash
-   BACKLOG_PROJECT=guiñotazo bash ~/guiñote/scripts/backlog next
-   BACKLOG_PROJECT=universiteit-utrecht bash ~/guiñote/scripts/backlog next
+   BACKLOG_PROJECT=guiñotazo bash ~/.claude/skills/scripts/backlog next
+   BACKLOG_PROJECT="Universiteit Utrecht" bash ~/.claude/skills/scripts/backlog next
    ```
 2. **Ask via `AskUserQuestion`** which board to pull from — label each option
    with the board name and a quick count/summary of what you just read (e.g.
@@ -214,7 +214,7 @@ High priority first.
 
 **Capture the UUID** immediately:
 ```bash
-BACKLOG_PROJECT=<resolved> bash ~/guiñote/scripts/backlog uuid <id>
+BACKLOG_PROJECT=<resolved> bash ~/.claude/skills/scripts/backlog uuid <id>
 ```
 (Numeric IDs recycle; all downstream commands must use the UUID.)
 
@@ -230,7 +230,7 @@ mandatory** — that board fans out across every `tf-*` repo in the home
 directory, and there is no reliable way to guess which one from the
 orchestrator's own cwd. Resolve it explicitly:
 ```bash
-BACKLOG_PROJECT=<resolved> bash ~/guiñote/scripts/backlog repo <UUID>
+BACKLOG_PROJECT=<resolved> bash ~/.claude/skills/scripts/backlog repo <UUID>
 ```
 - **If it prints a path**: `cd` there (or otherwise track it as `REPO_PATH`)
   and use it for every subsequent phase — Phase 3's repo scan, Phase 4's agent
@@ -241,7 +241,7 @@ BACKLOG_PROJECT=<resolved> bash ~/guiñote/scripts/backlog repo <UUID>
   before proceeding — don't guess from the current directory. Once given,
   backfill it onto the card so future runs don't hit this again:
   ```bash
-  BACKLOG_PROJECT=<resolved> bash ~/guiñote/scripts/backlog repo <UUID> <path>
+  BACKLOG_PROJECT=<resolved> bash ~/.claude/skills/scripts/backlog repo <UUID> <path>
   ```
 Guiñotazo cards have no such requirement — operate in the current repo as
 before.
@@ -249,7 +249,7 @@ before.
 ### Phase 2 — Claim the Card (on behalf of the worker)
 
 ```bash
-BACKLOG_PROJECT=<resolved> bash ~/guiñote/scripts/backlog claim <UUID>
+BACKLOG_PROJECT=<resolved> bash ~/.claude/skills/scripts/backlog claim <UUID>
 ```
 This moves it to `active` and annotates `claimed-by:worker`.
 
@@ -396,7 +396,7 @@ For each sub-task in the decomposition plan:
 ### Phase 6 — Move Card to REVIEW
 
 ```bash
-BACKLOG_PROJECT=<resolved> bash ~/guiñote/scripts/backlog review <UUID>
+BACKLOG_PROJECT=<resolved> bash ~/.claude/skills/scripts/backlog review <UUID>
 ```
 Card is now in the board's REVIEW column. **Do NOT run `backlog done`.**
 
@@ -436,7 +436,7 @@ On rejection:
 
 **Only on explicit "Approve — mark done":**
 ```bash
-BACKLOG_PROJECT=<resolved> bash ~/guiñote/scripts/backlog done <UUID>
+BACKLOG_PROJECT=<resolved> bash ~/.claude/skills/scripts/backlog done <UUID>
 ```
 
 **Close every specialist agent's tab spawned in Phase 4** — since Phase 4

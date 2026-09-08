@@ -42,7 +42,7 @@ explicitly say to proceed without clearing.
 - Herdr CLI installed and `HERDR_ENV=1` in the environment. Herdr itself is
   present — it's the *other agent kinds* (OpenCode, Grok, Google Antigravity)
   that are not installed in this environment, not Herdr.
-- `~/guiñote/scripts/backlog` wrapper, with `BACKLOG_PROJECT="Eurocontrol"`
+- `~/.claude/skills/scripts/backlog` wrapper, with `BACKLOG_PROJECT="Eurocontrol"`
   exported before every call.
 - Taskwarrior + taskwarrior-kanban backend running (`~/.task` store).
 
@@ -84,7 +84,7 @@ If not, run the `setup-kanban-board` skill (or equivalent steps) to start it.
   (test count, lint status) — never trust docs or memory.
 - **Recent direction**: `git log --oneline -20` for active work trajectory.
 - **Existing backlog cards**: `BACKLOG_PROJECT=Eurocontrol bash
-  ~/guiñote/scripts/backlog next` and `... board` to see current tasks,
+  ~/.claude/skills/scripts/backlog next` and `... board` to see current tasks,
   priorities, and avoid duplication.
 
 **Output**: Keep this internal. Use it to anchor every claim in the card to
@@ -362,7 +362,7 @@ Use `AskUserQuestion` (single call, up to 4 questions) to get:
 
 ```bash
 export BACKLOG_PROJECT="Eurocontrol"
-bash ~/guiñote/scripts/backlog add "<full card text>" --priority <H|M|L> [--agent claude]
+bash ~/.claude/skills/scripts/backlog add "<full card text>" --priority <H|M|L> [--agent claude]
 ```
 
 - `--priority`: H/M/L from user's choice.
@@ -373,7 +373,7 @@ Confirm back to the user:
 - New card ID, state `todo`, assigned builder (`agent:`).
 - Board URL: `http://127.0.0.1:8787/`.
 - Commands to pick it up: `BACKLOG_PROJECT=Eurocontrol bash
-  ~/guiñote/scripts/backlog claim`, then `review`/`done`.
+  ~/.claude/skills/scripts/backlog claim`, then `review`/`done`.
 
 ### Phase 9 — Clean Up the Herdr Verification Agents
 

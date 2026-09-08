@@ -36,7 +36,7 @@ fresh in production mode.
   with the `scripts/backlog` wrapper)
 - It only reads Taskwarrior; it does not need Postgres or the guiñote Vite app
   to be running.
-- The CLI wrapper lives at `~/guiñote/scripts/backlog`. It is project-agnostic:
+- The CLI wrapper lives at `~/.claude/skills/scripts/backlog`. It is project-agnostic:
   it scopes every `task` call to `project:${BACKLOG_PROJECT:-guiñotazo}`. Any
   project can use it by exporting `BACKLOG_PROJECT=<that project's name>`
   before calling it — this is how a new project gets its own lane on the
@@ -110,15 +110,15 @@ it's about wiring up *this* project, not the server.
    `setup-kanban-board` skill if it's down).
 
    Tasks for this project are scoped with `project:<project-name>` in
-   Taskwarrior. Use the `backlog` wrapper (`~/guiñote/scripts/backlog`) with
+   Taskwarrior. Use the `backlog` wrapper (`~/.claude/skills/scripts/backlog`) with
    `BACKLOG_PROJECT=<project-name>` exported, e.g.:
 
    ```bash
    export BACKLOG_PROJECT=<project-name>
-   ~/guiñote/scripts/backlog add "description" [--agent NAME] [--priority H|M|L]
-   ~/guiñote/scripts/backlog next     # list open/active tasks
-   ~/guiñote/scripts/backlog claim    # pick up a task
-   ~/guiñote/scripts/backlog done     # complete a task
+   ~/.claude/skills/scripts/backlog add "description" [--agent NAME] [--priority H|M|L]
+   ~/.claude/skills/scripts/backlog next     # list open/active tasks
+   ~/.claude/skills/scripts/backlog claim    # pick up a task
+   ~/.claude/skills/scripts/backlog done     # complete a task
    ```
 
    When picking up work in this repo, check the board/backlog first instead of

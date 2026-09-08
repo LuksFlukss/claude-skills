@@ -14,14 +14,25 @@ user approval gates, and finally pushing to the kanban board.
 → approve → push.** Never run `scripts/backlog add` until the user has
 explicitly approved the final card after all verification rounds.
 
+**Hard requirement — every agent this skill spins up, anywhere in the
+workflow, is dispatched via the Herdr CLI using a kind/model picked from the
+[Agent/Model Routing](#agentmodel-routing-strength--cost-based) table.** This
+applies to Phase 1's repo-scan helpers just as much as Phase 4's verification
+pair — there is no step in this skill where reaching for the generic `Agent`
+tool (Claude Code subagents) instead of `herdr agent start` is correct. Pick
+the agent from the table per the sub-task's type, and — per the existing rule
+below — always tell the user which one you're starting and why before you
+start it.
+
 **Hard requirement — verification agents never share the orchestrator's pane
 or tab.** A verification agent must never run as a `herdr pane split` off the
 orchestrator's own tab — splitting shares screen space with whatever else is
-in that tab, and gets cramped/unreadable as agents pile in. Every verification
-agent gets its own brand-new tab (`herdr tab create`), never a split pane, no
-exceptions. Once its work is done and it's no longer needed, close its
-**entire tab** (`herdr tab close <tab_id>`), not just its pane. See Phase 4.2
-and Phase 9 for the exact commands.
+in that tab, and gets cramped/unreadable as agents pile in. Every agent
+started by this skill — Phase 1's helpers included, not just Phase 4's
+verification pair — gets its own brand-new tab (`herdr tab create`), never a
+split pane, no exceptions. Once its work is done and it's no longer needed,
+close its **entire tab** (`herdr tab close <tab_id>`), not just its pane. See
+Phase 1, Phase 4.2, and Phase 9 for the exact commands.
 
 ---
 
@@ -49,7 +60,7 @@ that machinery instead of trying to degrade gracefully here.
 
 - Herdr CLI installed and `HERDR_ENV=1` in the environment (required for
   spawning verification agents).
-- `~/guiñote/scripts/backlog` wrapper (project-agnostic; scopes every card via
+- `~/.claude/skills/scripts/backlog` wrapper (project-agnostic; scopes every card via
   `BACKLOG_PROJECT`, see Board Routing below).
 - Taskwarrior + taskwarrior-kanban backend running (`~/.task` store, shared
   across both boards — they're lanes on the same server, distinguished by
@@ -61,7 +72,7 @@ that machinery instead of trying to degrade gracefully here.
 
 This skill's shared taskwarrior-kanban server currently hosts **two** boards
 (lanes), selected by exporting `BACKLOG_PROJECT` before calling
-`~/guiñote/scripts/backlog`:
+`~/.claude/skills/scripts/backlog`:
 
 | Repo | `BACKLOG_PROJECT` | Board name |
 |------|-------------------|------------|
@@ -190,28 +201,76 @@ Before anything else, verify the board is reachable at `http://127.0.0.1:8787/`.
 If not, run the `setup-kanban-board` skill (or equivalent steps) to start it.
 The board is where the final card will be visible.
 
-### Phase 1 — Read & Understand the Repo (Silent Deep Scan)
+### Phase 1 — Read & Understand the Repo (Delegated Deep Scan)
 
-**Do this before asking any clarifying questions.** Build a real picture:
+**Do this before asking any clarifying questions.**
 
-- **Structure**: key directories/modules, how the repo is organized.
-- **Stack & conventions**: languages, tools, existing patterns for the kind of
-  change likely being asked for (naming, module boundaries, state management,
-  test patterns, CI checks).
-- **Engine purity rules**: Read `AGENTS.md` — especially "Keep the rules engine
-  pure: bots/UI code must never mutate `src/engine` logic; engine changes are
-  additive exports only (`src/engine/index.ts`)."
-- **Verification commands**: Detect the project's tooling signals
-  (`package.json`, `Makefile`, etc.) and identify the exact verification command
-  (e.g. `npm run lint && npm run test && npm run build`). **Run it once now to
-  capture live numbers** (test count, lint status) — never trust docs or memory.
-- **Recent direction**: `git log --oneline -20` for active work trajectory.
-- **Existing backlog cards**: `BACKLOG_PROJECT=<resolved project> bash
-  ~/guiñote/scripts/backlog next` and `... board` to see current tasks, agents
-  in use, priorities, and avoid duplication.
-- **Board resolution**: determine the repo name and resolve it to a
-  `BACKLOG_PROJECT` per [Board Routing](#board-routing-two-boards) — do this
-  first since the backlog commands above need it.
+**Hard requirement — don't run this scan solo, and don't reach for the
+generic `Agent` tool to delegate it.** Just like Phase 4 doesn't diagnose the
+design alone, Phase 1 doesn't read the repo alone: spin up **helper agents
+via Herdr**, picked from the [Agent/Model Routing](#agentmodel-routing-strength--cost-based)
+table like every other agent this skill starts, to gather the picture in
+parallel, and act as the **orchestrator** — dispatch, wait, reconcile.
+Reaching for `grep`/`read`/`git log` yourself here, sub-task by sub-task,
+defeats the point; only the one board-resolution check below is cheap enough
+to do yourself.
+
+0. **Resolve the board yourself first** — determine the repo name and
+   resolve it to a `BACKLOG_PROJECT` per [Board Routing](#board-routing-two-boards).
+   This is a one-line basename/glob check, not worth delegating, and every
+   helper agent's backlog-lookup prompt below needs the resolved value before
+   it can be dispatched.
+
+1. **Dispatch helper agents in parallel via Herdr** — these are read-only
+   research briefs, so per the Routing table's "Long doc/spec reading, quick
+   lint/summarization" row, default each to **Nemotron 3 Ultra** (`opencode`
+   → `-m opencode/nemotron-3-ultra-free --agent plan`, free tier) unless a
+   given scan clearly calls for deeper trade-off judgment, in which case use
+   **MiMo V2.5** (`-m opencode/mimo-v2.5-free --agent plan`) instead — both
+   forced to the read-only `plan` persona, since Phase 1 is discovery, not
+   implementation. **Tell the user which agent you're starting for each scan,
+   and why, before starting it** (same rule as everywhere else in this
+   skill). Split the scan by concern, e.g.:
+   - **Structure & conventions**: key directories/modules, how the repo is
+     organized, languages/tools, and existing patterns for the kind of
+     change likely being asked for (naming, module boundaries, state
+     management, test patterns, CI checks). Have it also check for and read
+     `AGENTS.md` for engine purity rules — e.g. "Keep the rules engine pure:
+     bots/UI code must never mutate `src/engine` logic; engine changes are
+     additive exports only (`src/engine/index.ts`)" — if that file exists.
+   - **Tooling & live verification**: detect the project's tooling signals
+     (`package.json`, `Makefile`, etc.), identify the exact verification
+     command, and **run it once to capture live numbers** (test count, lint
+     status) — never trust docs or memory for this.
+   - **Recent direction & existing backlog**: `git log --oneline -20` for
+     active work trajectory, plus `BACKLOG_PROJECT=<resolved project> bash
+     ~/.claude/skills/scripts/backlog next` and `... board` to see current tasks,
+     agents in use, priorities, and avoid duplication.
+
+   Each scan gets its own brand-new tab, same as every other agent in this
+   skill — never a split pane, never reused:
+   ```bash
+   TAB_JSON=$(herdr tab create --cwd "$PWD" --no-focus)
+   TAB_ID=$(echo "$TAB_JSON" | jq -r '.result.tab.tab_id')
+   PANE_ID=$(echo "$TAB_JSON" | jq -r '.result.root_pane.pane_id')
+   herdr agent start scan-structure --kind opencode --pane "$PANE_ID" -- -m opencode/nemotron-3-ultra-free --agent plan
+   herdr agent prompt scan-structure "<self-contained brief>" --wait --timeout 300000
+   ```
+   Brief each agent like a colleague with zero context: give it the repo root,
+   the resolved `BACKLOG_PROJECT`, and exactly what to report back —
+   file:line-anchored facts, not vague summaries. These are research/read-only
+   briefs, not implementation work, so say so explicitly in each prompt (same
+   spirit as Phase 4.1's "DO NOT MODIFY ANY FILES" line, even though `plan`
+   already blocks writes at the tool level).
+
+   Track each helper's `tab_id`/`pane_id`/name the same way Phase 4 does —
+   Phase 9 closes these tabs too, not just the Phase 4 verification pair's.
+
+2. **Reconcile**: once every agent reports back (`herdr agent read <name>
+   --source recent-unwrapped --lines 300`), merge their findings into one
+   internal picture yourself. Resolve any contradiction directly (e.g. two
+   agents disagreeing on the live test count — re-run the verification
+   command yourself to settle it) rather than picking one report at random.
 
 **Output**: Keep this internal. Use it to anchor every claim in the card to real
 file:line references.
@@ -584,7 +643,7 @@ Present the **complete drafted card** in the chat. **Do NOT push yet.**
 
 **If this is a Universiteit Utrecht card and Phase 6's `Repo:` line is still a
 placeholder or missing**, resolve that before asking anything else — it's a
-hard requirement, not a nice-to-have; `bash ~/guiñote/scripts/backlog add`
+hard requirement, not a nice-to-have; `bash ~/.claude/skills/scripts/backlog add`
 will refuse the push without it (Phase 8).
 
 Use `AskUserQuestion` (single call, up to 4 questions) to get:
@@ -612,7 +671,7 @@ Export the `BACKLOG_PROJECT` resolved in Board Routing, then push:
 
 ```bash
 export BACKLOG_PROJECT="<guiñotazo|Universiteit Utrecht>"
-bash ~/guiñote/scripts/backlog add "<full card text>" --priority <H|M|L> [--agent <model>] [--repo <absolute path>]
+bash ~/.claude/skills/scripts/backlog add "<full card text>" --priority <H|M|L> [--agent <model>] [--repo <absolute path>]
 ```
 
 - `--priority`: H/M/L from user's choice.
@@ -627,21 +686,22 @@ Confirm back to the user:
 - Board URL: `http://127.0.0.1:8787/` (both boards live on the same server;
   the `project:` field distinguishes lanes).
 - Commands to pick it up (same `BACKLOG_PROJECT` exported): `bash
-  ~/guiñote/scripts/backlog claim`, then `review`/`done`.
+  ~/.claude/skills/scripts/backlog claim`, then `review`/`done`.
 
-### Phase 9 — Clean Up the Herdr Verification Agents
+### Phase 9 — Clean Up the Herdr Agents
 
-Once the card push is confirmed, close out the Herdr agents spun up for Phase 4
-verification — they've served their purpose and shouldn't linger:
+Once the card push is confirmed, close out **every** Herdr agent this skill
+spun up — Phase 1's repo-scan helpers as well as Phase 4's verification pair —
+they've served their purpose and shouldn't linger:
 
 ```bash
-herdr agent list         # confirm the tabs/panes/agents from Phase 4 (by id/name)
-herdr tab close <tab_id>   # once per verification agent's tab spun up in Phase 4
+herdr agent list         # confirm every tab/pane/agent from Phase 1 and Phase 4 (by id/name)
+herdr tab close <tab_id>   # once per agent's tab spun up in Phase 1 or Phase 4
 ```
 
-Do this for **every** verification agent started in Phase 4 (skip if Phase 4 was
-skipped because `HERDR_ENV=1` was unavailable). Confirm to the user that the
-verification agents have been closed.
+Do this for **every** agent started in Phase 1 or Phase 4 (skip whichever
+phase's agents don't apply — e.g. Phase 4 was skipped because `HERDR_ENV=1`
+was unavailable). Confirm to the user that all of them have been closed.
 
 ---
 
@@ -677,6 +737,10 @@ conversation. Do not skip any phase.
 
 - **Never guess file paths** — read them first (use `read`/`grep`/`glob`).
 - **Never assume tooling** — detect and confirm with the user (Phase 1).
+- **Every agent this skill starts — Phase 1's repo-scan helpers included, not
+  just Phase 4's verification pair — is picked from the Agent/Model Routing
+  table and started via `herdr agent start`.** The generic `Agent` tool is
+  never the right call anywhere in this workflow.
 - **Never lock in an idea before challenging it** — Phase 2.2's co-design loop
   (~2-4 rounds) happens before Phase 4's paid Herdr agents ever spin up; don't
   skip straight from "essentials gathered" to a silent internal design.
@@ -696,7 +760,8 @@ conversation. Do not skip any phase.
 - **Close Herdr agents after the push** — Phase 4 spins up Herdr verification
   agents; once Phase 8 confirms the card is pushed, close those agents/panes
   (Phase 9) so they don't linger unused.
-- **Every verification agent gets its own brand-new tab, never a pane split
-  off the orchestrator, never reused** — no exceptions; this is also why every
-  one of them gets closed **in full** (`herdr tab close`) in Phase 9 (nothing
-  there was ever the user's own pane or tab).
+- **Every agent — Phase 1 helpers and Phase 4 verifiers alike — gets its own
+  brand-new tab, never a pane split off the orchestrator, never reused** — no
+  exceptions; this is also why every one of them gets closed **in full**
+  (`herdr tab close`) in Phase 9 (nothing there was ever the user's own pane
+  or tab).

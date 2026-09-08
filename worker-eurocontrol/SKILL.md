@@ -42,7 +42,7 @@ explicitly say to proceed without clearing.
 - `HERDR_ENV=1` (required — this skill runs inside Herdr). Herdr itself is
   installed — it's the *other agent kinds* (OpenCode, Grok, Google
   Antigravity) that are not installed in this environment, not Herdr.
-- `~/guiñote/scripts/backlog` wrapper, with `BACKLOG_PROJECT="Eurocontrol"`
+- `~/.claude/skills/scripts/backlog` wrapper, with `BACKLOG_PROJECT="Eurocontrol"`
   exported before every call.
 - Taskwarrior + taskwarrior-kanban backend (`~/.task`).
 - Kanban board running at `http://127.0.0.1:8787/` (run `/setup_kanban_board`
@@ -117,7 +117,7 @@ result, resume once the user reports back.
 
 ### Phase 0 — Ensure Board & Prerequisites
 
-1. Verify `HERDR_ENV=1` and `~/guiñote/scripts/backlog` exists. Stop if not.
+1. Verify `HERDR_ENV=1` and `~/.claude/skills/scripts/backlog` exists. Stop if not.
 2. Ensure kanban board is up (`curl http://127.0.0.1:8787/` → 200). If not,
    run `/setup_kanban_board`.
 
@@ -125,7 +125,7 @@ result, resume once the user reports back.
 
 ```bash
 export BACKLOG_PROJECT="Eurocontrol"
-bash ~/guiñote/scripts/backlog next
+bash ~/.claude/skills/scripts/backlog next
 ```
 
 **If the user didn't provide a task number**: Ask via `AskUserQuestion` with
@@ -134,7 +134,7 @@ description). High priority first.
 
 **Capture the UUID** immediately:
 ```bash
-bash ~/guiñote/scripts/backlog uuid <id>
+bash ~/.claude/skills/scripts/backlog uuid <id>
 ```
 (Numeric IDs recycle; all downstream commands must use the UUID.)
 
@@ -149,7 +149,7 @@ assigned agent (if any), priority.
 
 ```bash
 export BACKLOG_PROJECT="Eurocontrol"
-bash ~/guiñote/scripts/backlog claim <UUID>
+bash ~/.claude/skills/scripts/backlog claim <UUID>
 ```
 This moves it to `active` and annotates `claimed-by:worker`.
 
@@ -246,7 +246,7 @@ For each sub-task in the decomposition plan:
 
 ```bash
 export BACKLOG_PROJECT="Eurocontrol"
-bash ~/guiñote/scripts/backlog review <UUID>
+bash ~/.claude/skills/scripts/backlog review <UUID>
 ```
 Card is now in the board's REVIEW column. **Do NOT run `backlog done`.**
 
@@ -287,7 +287,7 @@ On rejection:
 **Only on explicit "Approve — mark done":**
 ```bash
 export BACKLOG_PROJECT="Eurocontrol"
-bash ~/guiñote/scripts/backlog done <UUID>
+bash ~/.claude/skills/scripts/backlog done <UUID>
 ```
 
 **Close every specialist agent's tab spawned in Phase 4** — since Phase 4

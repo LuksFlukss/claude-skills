@@ -1,0 +1,221 @@
+#!/usr/bin/env sh
+#
+# backlog — minimal Taskwarrior-backed backlog for this project.
+# Any agent (or human) in a terminal can push tasks and pick them up.
+# Backend: Taskwarrior, scoped to project:$BACKLOG_PROJECT (default "guiñotazo").
+# The kanban columns map to the UDA `state`: todo -> active -> review -> done.
+#
+# Usage:
+#   backlog add "description" [--agent NAME] [--priority H|M|L] [--repo PATH]
+#   backlog next                                  list open (todo) + in-progress tasks
+#   backlog claim [REF]                           pick up a task (moves it to ACTIVE)
+#   backlog back [REF]                            return a task to the TODO column
+#   backlog review [REF]                          move a task to REVIEW
+#   backlog done [REF]                            complete a task (card lands in the board's DONE column)
+#   backlog archive [REF]                         drop a task from the board entirely (task done)
+#   backlog uuid <id>                             print the stable UUID of a task
+#   backlog assign <REF> <model>                  set the card's builder/owner (agent: field)
+#   backlog repo <REF> [PATH]                     print the card's repo:, or set it if PATH given
+#   backlog board                                 kanban-style report of the backlog
+#   backlog serve                                 print how to start the web board
+#
+# REF is a Taskwarrior UUID (or UUID prefix) OR a bare id. Every mutating
+# command resolves REF to a UUID first, so "claim -> do -> done" flows are
+# stable even though Taskwarrior recycles numeric ids on status changes.
+#
+# repo: is a plain Taskwarrior UDA (uda.repo.type=string in ~/.taskrc) holding
+# the absolute path of the repo the card applies to. Boards that fan out
+# across multiple repos (e.g. "Universiteit Utrecht", which spans every tf-*
+# Terraform/Azure repo in $HOME) REQUIRE it on every card added under them —
+# see REPO_REQUIRED_PROJECTS below — so that a worker resolving the card knows
+# which directory to apply changes in without guessing from its own cwd.
+#
+# Concurrency: relies on Taskwarrior's own locking — safe for parallel agents.
+
+PROJECT="${BACKLOG_PROJECT:-guiñotazo}"
+ME="${BACKLOG_AGENT:-$(basename "$HOME")}"
+
+# Boards spanning multiple repos: repo: is mandatory on every card added here.
+# Match is case-insensitive so "Universiteit Utrecht" / "universiteit-utrecht"
+# both hit it (skills/CLAUDE.md docs use both spellings across repos).
+repo_required() {
+  case "$(printf '%s' "$PROJECT" | tr '[:upper:]' '[:lower:]')" in
+    *universiteit*utrecht*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+run() {
+  command task project:"$PROJECT" "$@"
+}
+
+kanban_report() {
+  if repo_required; then
+    run \
+      rc.report.kanban.columns=id,state,agent,repo,description \
+      rc.report.kanban.labels=ID,State,Agent,Repo,Description \
+      rc.report.kanban.sort=id+ \
+      "rc.report.kanban.filter=project:$PROJECT and status:pending" \
+      kanban
+  else
+    run \
+      rc.report.kanban.columns=id,state,agent,description \
+      rc.report.kanban.labels=ID,State,Agent,Description \
+      rc.report.kanban.sort=id+ \
+      "rc.report.kanban.filter=project:$PROJECT and status:pending" \
+      kanban
+  fi
+}
+
+# Resolve a numeric id OR uuid/uuid-prefix to a full UUID, or die.
+resolve_ref() {
+  ref="$1"
+  case "$ref" in
+    *[!0-9]*)
+      # already a uuid or uuid prefix
+      uuid=$(run "$ref" rc.verbose:nothing uuids 2>/dev/null | awk '{print $1}')
+      ;;
+    *)
+      # numeric id -> uuid of that pending task, this instant
+      uuid=$(run "$ref" rc.verbose:nothing uuids 2>/dev/null | awk '{print $1}')
+      ;;
+  esac
+  [ -n "$uuid" ] || { echo "no task matches '$ref' in project $PROJECT" >&2; exit 1; }
+  printf '%s' "$uuid"
+}
+
+pick_open() {
+  run state:todo rc.verbose:nothing minimal 2>/dev/null \
+    | grep -oE '^ *[0-9]+' | head -1 | tr -d ' '
+}
+
+cmd_add() {
+  if [ "$#" -eq 0 ]; then
+    echo "usage: backlog add \"description\" [--agent NAME] [--priority H|M|L] [--repo PATH]" >&2
+    exit 2
+  fi
+  desc=""
+  agent=""
+  priority=""
+  repo=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --agent)
+        agent="$2"; shift 2;;
+      --priority)
+        p="$2"
+        shift 2
+        case "$p" in H|M|L) priority="priority:$p";; *) echo "priority must be H, M or L" >&2; exit 2;; esac
+        ;;
+      --repo)
+        repo="$2"; shift 2;;
+      *)
+        desc="$desc $1"; shift;;
+    esac
+  done
+  desc="$(printf '%s' "$desc" | sed 's/^ //')"
+  [ -n "$agent" ] && agent="agent:$agent"
+  if repo_required && [ -z "$repo" ]; then
+    echo "project '$PROJECT' requires --repo PATH (absolute path to the repo this card applies to) — a worker resolving this card needs it to know where to apply changes" >&2
+    exit 2
+  fi
+  [ -n "$repo" ] && repo="repo:$repo"
+  run add state:todo $priority $agent $repo "$desc"
+  echo "pushed to backlog (state:todo): $desc"
+}
+
+cmd_next() {
+  echo "== OPEN (TODO) =="
+  kanban_report
+  echo
+  echo "== ACTIVE =="
+  run state:active list
+}
+
+cmd_claim() {
+  ref="$1"
+  if [ -z "$ref" ]; then
+    id="$(pick_open)"
+    [ -n "$id" ] || { echo "no open tasks to claim"; exit 1; }
+    ref="$id"
+  fi
+  uuid="$(resolve_ref "$ref")"
+  run "$uuid" modify state:active >/dev/null
+  run "$uuid" annotate "claimed-by:$ME" >/dev/null
+  echo "claimed $uuid (by $ME) -> ACTIVE"
+}
+
+cmd_back() {
+  uuid="$(resolve_ref "${1:?usage: backlog back [REF]}")"
+  run "$uuid" modify state:todo >/dev/null
+  echo "$uuid -> TODO"
+}
+
+cmd_review() {
+  uuid="$(resolve_ref "${1:?usage: backlog review [REF]}")"
+  run "$uuid" modify state:review >/dev/null
+  echo "$uuid -> REVIEW"
+}
+
+cmd_done() {
+  uuid="$(resolve_ref "${1:?usage: backlog done [REF]}")"
+  # Board semantics: DONE is a terminal `state` while status stays pending, so
+  # the card lands in the board's DONE column (matching taskwarrior-kanban).
+  run "$uuid" modify state:done >/dev/null
+  echo "$uuid -> DONE (on board)"
+}
+
+cmd_archive() {
+  uuid="$(resolve_ref "${1:?usage: backlog archive [REF]}")"
+  run "$uuid" done >/dev/null
+  echo "$uuid -> archived (status:completed, removed from board)"
+}
+
+cmd_uuid() {
+  resolve_ref "${1:?usage: backlog uuid <id>}"
+}
+
+cmd_assign() {
+  uuid="$(resolve_ref "${1:?usage: backlog assign <REF> <model>}")"
+  model="${2:?usage: backlog assign <REF> <model>}"
+  run "$uuid" modify "agent:$model" >/dev/null
+  echo "$uuid assigned to agent:$model"
+}
+
+cmd_repo() {
+  uuid="$(resolve_ref "${1:?usage: backlog repo <REF> [PATH]}")"
+  path="$2"
+  if [ -n "$path" ]; then
+    run "$uuid" modify "repo:$path" >/dev/null
+    echo "$uuid repo -> $path"
+  else
+    val="$(command task rc.verbose:nothing _get "$uuid.repo" 2>/dev/null)"
+    if [ -z "$val" ]; then
+      echo "no repo: set on $uuid" >&2
+      exit 1
+    fi
+    printf '%s\n' "$val"
+  fi
+}
+
+cmd_serve() {
+  echo "Board: ~/.local/share/taskwarrior-kanban (pnpm start) -> http://127.0.0.1:8787"
+  echo "Backend store: ~/.task (Taskwarrior 3.5, taskchampion sqlite)"
+}
+
+case "${1:-}" in
+  add) shift; cmd_add "$@" ;;
+  next) cmd_next ;;
+  claim) shift; cmd_claim "$@" ;;
+  back) shift; cmd_back "$@" ;;
+  review) shift; cmd_review "$@" ;;
+  done) shift; cmd_done "$@" ;;
+  archive) shift; cmd_archive "$@" ;;
+  uuid) shift; cmd_uuid "$@" ;;
+  assign) shift; cmd_assign "$@" ;;
+  repo) shift; cmd_repo "$@" ;;
+  board) kanban_report ;;
+  serve) cmd_serve ;;
+  "") cmd_next ;;
+  *) echo "unknown subcommand: $1" >&2; exit 2 ;;
+esac
