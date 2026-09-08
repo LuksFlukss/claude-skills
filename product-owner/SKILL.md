@@ -31,11 +31,12 @@ resolve the absolute repo path and pass it through as `--repo` at push time
 ## Prerequisites
 
 - `scripts/backlog` in repo root.
-- Kanban board at `http://127.0.0.1:8787/` (run `/setup_kanban_board` if needed).
+- Kanban board at `http://127.0.0.1:8787/` (run `/setup-kanban-board` if needed).
 - `AGENTS.md` read for constraints (engine purity, verification commands).
-- Herdr CLI + `HERDR_ENV=1` — optional, enables Author mode's multi-agent
-  verification step (Grok + Claude). Author mode works without it; that step
-  is just skipped and noted in the card.
+- Herdr CLI + `HERDR_ENV=1` — **not needed by this skill.** All three modes
+  run entirely in this session; no Herdr agents are dispatched. If a draft
+  warrants independent multi-agent scrutiny before it's written up, use
+  `kanban-task` instead of Author mode.
 
 ---
 
@@ -181,60 +182,6 @@ explored and why), that's what `kanban-task` is for; running the same kind
 of verification twice across two skills was pure overhead. The human
 approval gate (step 6) is still mandatory either way.
 
-### Multi-Agent Verification (Herdr) — Verifier A routed dynamically, Verifier B fixed
-
-Verifier B is always the Claude orchestrator (below). Verifier A is **not**
-fixed to one agent — pick it per run from
-[`../shared/agent-routing.md`](../shared/agent-routing.md)'s routing table
-(same file `kanban-task` and `worker` use), based on what the drafted
-solution actually is:
-
-1. **Classify** the drafted solution by primary task type (the shared
-   table's categories), the same way `kanban-task` Phase 3 does.
-2. **Pick Verifier A** from the matching row. Default to the Free/Low-cost
-   pick that fits — don't reach for Grok just because it's listed; use it
-   only when the row genuinely says diverse-cross-check or the draft is
-   itself high-risk.
-3. **Effort selection** (Grok/Antigravity only): follow the shared file's
-   Effort Selection section — present the recommendation first, labeled
-   `<level> — recommended (<one-line reason>)`, with 1-2 adjacent levels as
-   alternatives. Recommend `low` for a simple, well-scoped pitch/fix,
-   `medium` for routine card verification, `high` only when the draft is
-   itself unusually high-risk. **Whichever agent Verifier A lands on,
-   explicitly tell the user which one (and briefly why) before starting
-   it** — don't fold it in silently.
-4. **Billing-failure fallback**: follow the shared file's "Billing-Failure /
-   Rate-Limit Fallback" section, substituting "verification slot" for
-   "proposal slot." (Verifier B is always Claude, a fixed role, not routed
-   from the shared table.)
-
-- **Verifier B — Claude, the orchestration agent, always.** This one is allowed to
-  spin up its own helper agents if the verification prompt is broad enough to
-  need them (e.g. splitting "check the engine side" from "check the UI side").
-  **When it does, its helpers must each get their own new Herdr pane**
-  (`herdr pane split --current --direction right --cwd "$PWD" --no-focus` then
-  `herdr agent start <helper-name> --kind ... --pane <id> -- ...`) — never
-  spawned invisibly inline. Say this explicitly in the prompt you send to
-  Verifier B, e.g.:
-
-  > "If you need help from other agents to verify this, spin each one up in
-  > its own new Herdr pane (`herdr pane split` + `herdr agent start`) rather
-  > than handling it all yourself inline. Collect all of their findings
-  > yourself and give me back one consolidated report — I only need your
-  > final summary, not a transcript of each helper."
-
-  This keeps every pane in the workspace individually inspectable (good for
-  the user following along live) while still handing you back exactly one
-  report per verifier to reconcile — Verifier B's own report already merges
-  whatever its helpers found, so you reconcile two reports total (A + B), not
-  N.
-
-Both verifiers are diagnosis-only (no fixes applied). Reconcile agreed
-concerns, divergent opinions, and missed edge cases into the draft before
-step 6, same as `kanban-task` Phase 4.3. Close every pane opened for this
-step (Verifier B's helper panes included — `herdr agent list`/`herdr pane
-list` to find them) once the card is pushed.
-
 ### Task Card Template
 
 Use the template at
@@ -274,11 +221,10 @@ bash scripts/backlog board
 - **Read AGENTS.md** — bake engine purity, verification commands into every card.
 - **Use live data** — run verification command at author time for real test counts.
 - **Board is source of truth** — `bash scripts/backlog board` before any pitch/groom.
-- **Agent assignment** — look at recent cards for actual agent names in use (`claude`, `big-pickle`, `mimo`).
-- **HERDR_ENV=1** — if set, Author mode runs its own verification pair before
-  drafting the card — see Mode 3: Verifier A routed per task type (table in
-  Mode 3, effort confirmed only when it lands on Grok), Verifier B always the
-  Claude orchestrator. If a verifier spins up helpers, those must land in new
-  Herdr panes, never invisible inline subagents, so the workspace stays
-  inspectable; the verifier still owes you one consolidated report, not a
-  transcript per helper. Close every pane opened for this step once pushed.
+- **Agent assignment** — the `agent:` field is an enum; only these values are
+  legal, and `backlog add --agent <x>` fails outright on anything else:
+  `claude`, `big-pickle`, `mimo`, `grok`, `antigravity`, `human`,
+  `orchestrator`, `codex`. Use the exact token (lowercase, hyphenated) — not
+  a display label like "Big Pickle". See `../shared/agent-routing.md`.
+- **No Herdr agents here** — all three modes run in this session. Independent
+  multi-agent scrutiny of a draft is `kanban-task`'s job, not Author mode's.

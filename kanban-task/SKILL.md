@@ -36,6 +36,14 @@ never a split pane, no exceptions. Once its work is done and it's no longer
 needed, close its **entire tab** (`herdr tab close <tab_id>`), not just its
 pane. See Phase 1, Phase 3.2, and Phase 9 for the exact commands.
 
+**Read [`../shared/herdr-operations.md`](../shared/herdr-operations.md)
+before dispatching anything.** It covers the mechanics this skill leans on
+constantly and that otherwise get rediscovered every run: the
+permission-approval loop when an agent reads outside its `--cwd` (§2), the
+`agent_prompt_stalled` first-prompt retry (§3), and — most importantly for a
+skill this agent-heavy — **how to read agent output without burning tokens**
+(§4), since raw transcripts are roughly half TUI chrome.
+
 ---
 
 ## Before You Begin — Context Hygiene
@@ -365,12 +373,24 @@ Track each proposal agent's `tab_id` alongside its `pane_id`/name — Phase 9
 needs the `tab_id` to close it out.
 
 Wait for both to complete (poll `herdr agent get <name>` for `agent_status:
-idle` if `--wait` times out on a long-running one — this is normal for a
-substantial proposal, not a failure). Collect their reports (`herdr agent
-read <name> --source recent-unwrapped --lines 3000 --format text`; if the
-pane's own scrollback is truncated, ask the agent to re-state its proposal in
-a shorter follow-up prompt rather than relying on a long single response —
-the plan persona can't write a file for you to read back).
+idle`/`done` if `--wait` times out on a long-running one — this is normal for
+a substantial proposal, not a failure).
+
+Collect their reports per
+[`../shared/herdr-operations.md`](../shared/herdr-operations.md) §4 — **start
+narrow**, and widen only if the proposal is visibly cut off:
+
+```bash
+herdr agent read <name> --source recent-unwrapped --lines 250 --format text
+```
+
+Do **not** ask for `--lines 3000`: it reliably overflows the tool-output cap,
+spills to a file, and then has to be paged back in chunks — worse than two
+targeted reads. If a proposal really is too long to read cheaply, ask that
+agent to restate it compactly in a short follow-up prompt (the `plan` persona
+can't write a file for you to read back instead). Better still, cap it in the
+3.1 brief up front — the prompt template above already asks for plain text;
+add a word limit if the task is broad.
 
 Note the tab/pane/agent identifiers Herdr assigns to each of these two
 proposal agents (`herdr agent list` / `herdr tab list`) — you'll need the

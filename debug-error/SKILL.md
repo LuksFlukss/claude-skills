@@ -5,7 +5,9 @@ description: Take an error/stack trace/failure the user gives, dispatch it to tw
 
 # Debug Error
 
-Takes an error the user is stuck on and gets two independent agents investigating it in parallel — different kinds when possible, since a second interpreter (not just a second instance) is more likely to catch something the first one's blind spots miss. This skill only diagnoses; it never applies a fix. That's a separate step afterward (`grill-me` for a design pass, or just asking directly to fix it).
+Takes an error the user is stuck on and gets two independent agents investigating it in parallel — different kinds when possible, since a second interpreter (not just a second instance) is more likely to catch something the first one's blind spots miss. This skill only diagnoses; it never applies a fix. Acting on the diagnosis is a separate step afterward: `kanban-task` if it deserves a tracked card and a real design pass, `worker` if there's already a card for it, or just asking directly to fix it.
+
+**Mechanics** — starting agents, the permission-approval loop, first-prompt stalls, and reading output without burning tokens — all follow [`../shared/herdr-operations.md`](../shared/herdr-operations.md). **Agent/model choice, effort levels, and billing-failure fallback** follow [`../shared/agent-routing.md`](../shared/agent-routing.md). Read both before dispatching.
 
 ## Step 1 — Confirm HERDR_ENV
 
@@ -26,22 +28,22 @@ If any of this is missing and the error is ambiguous without it (e.g. no idea wh
 
 ## Step 3 — Pick the two investigating agents
 
-Ask the user (`AskUserQuestion`) which two agent kinds to use. Run `herdr agent list` first to show what's idle/available, and `herdr agent` for the supported kinds. Default suggestion: two *different* kinds (e.g. `claude` + `opencode`) rather than two instances of the same kind — different tools have different blind spots, so disagreement between them is more informative than agreement between two copies of the same one. Let the user override this if they'd rather use two of the same kind or specific existing live agents.
+Ask the user (`AskUserQuestion`) which two agent kinds to use. Run `herdr agent list` first to show what's idle/available. Default suggestion: two *different* kinds rather than two instances of the same kind — different tools have different blind spots, so disagreement between them is more informative than agreement between two copies of the same one. Let the user override this if they'd rather use two of the same kind.
 
-**Whichever two kinds are picked, explicitly tell the user which ones (e.g. "dispatching Claude and Grok") before starting them** — don't fold agent selection into the dispatch silently. If either one later turns out to be out of credits/rate-limited (Step 5) — this includes an `opencode`-kind pick (e.g. `-m opencode/big-pickle`) hitting its own quota, not just Grok — don't auto-retry: tell the user and offer **Google Antigravity (`agy` kind)** as the designated fallback via `AskUserQuestion`, labeled `Google Antigravity — fallback for <failed agent> (recommended)`, alongside re-picking any other kind.
+Pick both from [`../shared/agent-routing.md`](../shared/agent-routing.md)'s routing table, and follow its **Effort Selection** section for whichever picks have an effort concept (Claude/Grok/Antigravity) — for a diagnosis, recommend `medium` for a routine error and `high` for one that's already resisted a first look or spans multiple subsystems. Its **Billing-Failure / Rate-Limit Fallback** section covers what to do if either investigator turns out to be out of credits or rate-limited (Step 5), substituting "investigator" for "proposal slot."
 
-Follow the `herdr` skill's conventions for starting new agents: check pane availability with `herdr pane layout`, split sibling panes with `herdr pane split --current --direction right --cwd "$PWD" --no-focus`, then start each agent — the model/agent/effort are the underlying binary's own CLI args, passed after `--`, not `herdr`-level flags:
+**Whichever two kinds are picked, explicitly tell the user which ones (e.g. "dispatching Claude and Grok") before starting them** — don't fold agent selection into the dispatch silently.
+
+Start each in its **own brand-new tab** per [`../shared/herdr-operations.md`](../shared/herdr-operations.md) §1 — never a pane split off this session's tab, never a reused idle pane:
 
 ```bash
-herdr agent start <name> --kind claude --pane <pane-id> -- --effort <level>
-herdr agent start <name> --kind grok --pane <pane-id> -- --effort <level>
-herdr agent start <name> --kind opencode --pane <pane-id> -- -m opencode/<model> --agent <build|plan>
-herdr agent start <name> --kind agy --pane <pane-id> -- --model <model-name> --effort <level>
+TAB_JSON=$(herdr tab create --cwd "$PWD" --no-focus)
+TAB_ID=$(echo "$TAB_JSON"  | jq -r '.result.tab.tab_id')
+PANE_ID=$(echo "$TAB_JSON" | jq -r '.result.root_pane.pane_id')
+herdr agent start <name> --kind <kind> --pane "$PANE_ID" -- <binary's own args>
 ```
 
-**Effort (Claude/Grok/Antigravity only — OpenCode has no effort concept):** before starting a Claude, Grok, or Antigravity investigator, propose a recommended `--effort` level for the diagnosis (e.g. `medium` for a routine error, `high` for one that's resisted a first look or spans multiple subsystems) and confirm with the user via `AskUserQuestion` before spawning. Claude accepts `low`/`medium`/`high`/`xhigh`/`max`; Grok accepts `--reasoning-effort`/`--effort` with `low`/`medium`/`high` confirmed in practice (no tier above `high`); **Google Antigravity** (`agy` — Grok's designated fallback, see Step 3) accepts `--effort <level>` with the same `low`/`medium`/`high` scale and also needs `--model <name>` (run `agy models` to list current options; prefer a `-pro-` tier).
-
-**OpenCode model/agent (if `opencode` is picked):** always pass both `-m <provider/model>` (full form, e.g. `opencode/big-pickle`, `opencode/mimo-v2.5-free`) and `--agent <build|plan>` — `build` for an investigation that needs to run commands/read broadly, `plan` for pure reasoning over what's already been pasted. Ask the user which model if they picked `opencode` without specifying one.
+Note the persona choice for an `opencode`-kind investigator: `build` if it needs to run diagnostic commands and read around the repo, `plan` if it's pure reasoning over output already pasted into the brief.
 
 ## Step 4 — Compose one shared investigation prompt
 
@@ -51,6 +53,7 @@ Write a single self-contained prompt (both agents get the identical brief, so th
 3. What's already been ruled out, if anything.
 4. Explicit instructions: investigate root cause only — read code, logs, config, run read-only diagnostic commands (e.g. `terraform validate`, `terraform plan`, test commands) as needed to confirm a hypothesis, but **do not apply any fix or change any file**.
 5. A request for a structured reply: **most likely root cause** (with evidence — file:line, log excerpt, command output), **confidence** (high/medium/low), and **suggested fix** (described, not applied).
+6. A length cap — "report in plain text, under ~300 words, no preamble." Per `herdr-operations.md` §4, a compact answer is what keeps reading the result cheap; an unbounded one costs twice.
 
 ## Step 5 — Dispatch to both in parallel
 
@@ -68,20 +71,29 @@ herdr agent get <agentA>
 herdr agent get <agentB>
 ```
 
-Once each shows idle/complete, read its output:
+Once each shows `idle`/`done`, read its output — start narrow and widen only if the answer is visibly cut off (`herdr-operations.md` §4):
 
 ```bash
-herdr agent read <agentA> --source recent-unwrapped --lines 300
-herdr agent read <agentB> --source recent-unwrapped --lines 300
+herdr agent read <agentA> --source recent-unwrapped --lines 200
+herdr agent read <agentB> --source recent-unwrapped --lines 200
 ```
 
-If either ends up `blocked` (approval/question), inspect with `herdr agent get`/`herdr agent read` and ask the user how to respond rather than answering on their behalf.
+A `--wait`/prompt timeout is not failure here — a real investigation can outlive it; poll `herdr agent get` before concluding anything. If either goes `blocked`, handle it per `herdr-operations.md` §2: auto-accept only read-only external-directory prompts for an investigator you launched read-only, and take anything else to the user rather than answering on their behalf.
 
 ## Step 6 — Read both reports and decide
 
 Compare the two independent diagnoses yourself — don't just paste both back and ask the user to pick:
 - **Agreement** — both point to the same root cause: highest confidence, lead with this.
 - **Disagreement** — surface both hypotheses explicitly, and sanity-check each against the actual code/error yourself (read the file, re-check the log) rather than passing through an unverified claim. State which one you find more convincing and why, or say plainly if you can't tell from here.
-- **One found nothing / gave up** — note that, and rely on the other's finding, but flag that only one agent actually converged.
+- **One found nothing / gave up** — note that, and rely on the other's finding, but flag that only one agent actually converged. Per `herdr-operations.md` §5, an unusable report is *no data*, not agreement.
 
-Present one final diagnosis: the most likely root cause, the evidence for it, and the suggested fix — framed as ready input for `grill-me` (if it needs a design pass) or direct implementation, but don't apply anything yourself.
+Present one final diagnosis: the most likely root cause, the evidence for it, and the suggested fix — framed as ready input for whatever comes next (`kanban-task` if it deserves a tracked card, `worker` if a card already exists, or direct implementation), but don't apply anything yourself.
+
+## Step 7 — Close the investigators
+
+Once both diagnoses are captured and presented, close the tabs opened in Step 3 (`herdr-operations.md` §6):
+
+```bash
+herdr agent list
+herdr tab close <tab_id>   # once per investigator
+```

@@ -20,7 +20,7 @@ A comprehensive code review that:
 
 - Repo root is the working directory.
 - `scripts/backlog` available (for kanban-task integration).
-- Kanban board running (`/setup_kanban_board` if needed).
+- Kanban board running (`/setup-kanban-board` if needed).
 - `HERDR_ENV=1` optional but recommended for kanban-task's multi-agent verification.
 
 ---

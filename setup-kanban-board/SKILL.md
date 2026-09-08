@@ -149,5 +149,5 @@ running, say so instead of starting a duplicate. Include the step 5 outcome
 
 ## Usage as a command
 
-When invoked as `/setup_kanban_board`, execute the steps above and report the
+When invoked as `/setup-kanban-board`, execute the steps above and report the
 result.

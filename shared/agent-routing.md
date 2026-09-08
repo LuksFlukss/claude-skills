@@ -27,6 +27,29 @@ selection, and the billing-failure fallback pattern.
 used.** Big Pickle covers both the everyday-coding and long-doc/lint rows
 above — do not reach for a Nemotron model even as a one-off substitute.
 
+### Board `agent:` tokens (not the same as the labels above)
+
+When assigning a card (`backlog add --agent <token>` / `backlog assign`), the
+Taskwarrior `agent` UDA is an **enum** — anything outside it is rejected
+outright, so a display label like `"Big Pickle"` fails. Map label → token:
+
+| Label in this table | `agent:` token |
+|---------------------|----------------|
+| Claude | `claude` |
+| Big Pickle | `big-pickle` |
+| MiMo V2.5 | `mimo` |
+| Grok | `grok` |
+| Google Antigravity | `antigravity` |
+| (a human will do it) | `human` |
+| (this orchestrator) | `orchestrator` |
+
+Also legal but not routed from this table: `codex`, `mock`, `self_test`, and
+`nemotron` (retired — never assign it; it stays legal only until the last
+card using it is reassigned). The enum lives in `~/.taskrc`
+(`uda.agent.values`, in the `taskwarrior-kanban managed UDAs` block, which is
+the definition that actually takes effect). **Adding a new agent to this
+table means adding its token there too**, or every push assigning it fails.
+
 **Whenever ANY agent from this table is dispatched, explicitly tell the user
 which one (and briefly why) before starting it.** Never fold an agent
 selection into a pane-split/start sequence silently.

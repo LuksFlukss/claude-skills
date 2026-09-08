@@ -22,6 +22,11 @@ exceptions. When that agent's work is done and no longer needed, close its
 **entire tab** (`herdr tab close <tab_id>`), not just its pane. See Phase 4
 step 1 and Phase 9 for the exact commands.
 
+**Read [`../shared/herdr-operations.md`](../shared/herdr-operations.md)
+before dispatching anything** — the permission-approval loop when a sub-agent
+reads outside its `--cwd` (§2), the `agent_prompt_stalled` first-prompt retry
+(§3), and how to read sub-agent output without burning tokens (§4).
+
 ---
 
 ## Before You Begin — Context Hygiene
@@ -52,7 +57,7 @@ that machinery instead of trying to degrade gracefully here.
 - Taskwarrior + taskwarrior-kanban backend (`~/.task`, shared across both
   boards — they're lanes on the same server, distinguished by Taskwarrior's
   `project:` field).
-- Kanban board running at `http://127.0.0.1:8787/` (run `/setup_kanban_board` if not).
+- Kanban board running at `http://127.0.0.1:8787/` (run `/setup-kanban-board` if not).
 
 ---
 
@@ -145,7 +150,7 @@ directly by you, exactly as elsewhere in this skill.
 
 1. Verify `HERDR_ENV=1` and `~/.claude/skills/scripts/backlog` exists. Stop if not.
 2. Ensure kanban board is up (`curl http://127.0.0.1:8787/` → 200). If not, run
-   `/setup_kanban_board`.
+   `/setup-kanban-board`.
 
 ### Phase 1 — Select the Board, Then the Task
 

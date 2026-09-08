@@ -23,6 +23,13 @@ verification agent gets its own brand-new tab (`herdr tab create`), never a
 split pane. Once its work is done, close its **entire tab**
 (`herdr tab close <tab_id>`), not just its pane. See Phase 4.2 and Phase 9.
 
+**Read [`../shared/herdr-operations.md`](../shared/herdr-operations.md)
+before dispatching anything** — the permission-approval loop when an agent
+reads outside its `--cwd` (§2), the `agent_prompt_stalled` first-prompt retry
+(§3), and how to read agent output without burning tokens (§4). Its
+agent-routing companion doesn't apply here (Claude-only environment), but the
+mechanics do.
+
 ---
 
 ## Before You Begin — Context Hygiene
