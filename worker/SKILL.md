@@ -1,6 +1,6 @@
 ---
 name: worker
-description: Execute a kanban task by orchestrating multiple specialist Herdr agents (Claude, Big Pickle, MiMo, Nemotron, Grok). Decomposes task, verifies, presents for human approval, iterates, marks done. Use when you have a task on the board and want it executed with multi-agent support.
+description: Execute a kanban task by orchestrating multiple specialist Herdr agents (Claude, Big Pickle, MiMo, Grok). Decomposes task, verifies, presents for human approval, iterates, marks done. Use when you have a task on the board and want it executed with multi-agent support.
 ---
 
 # Worker — Execute a Kanban Task with Multi-Agent Herdr Support
@@ -80,56 +80,19 @@ Carry the resolved `BACKLOG_PROJECT` forward through the rest of the workflow
 
 ## Agent Portfolio (Herdr Kinds)
 
-| Agent Label | Herdr Kind / Model / OpenCode Agent | Best For |
-|-------------|-------------------|----------|
-| **Claude** | `claude` (Sonnet/Opus) | Complex multi-file coding, architecture decisions, large refactors |
-| **Big Pickle** | `opencode` → `-m opencode/big-pickle --agent build` | Everyday complex coding, multi-file edits, test writing |
-| **MiMo V2.5** | `opencode` → `-m opencode/mimo-v2.5-free --agent plan` | Complex reasoning, planning, investigation (read-only `plan` persona — no file writes) |
-| **Nemotron 3 Ultra** | `opencode` → `-m opencode/nemotron-3-ultra-free --agent build` | Quick inline tasks, long document reading, summarization (a faster/lighter option exists: `opencode/nemotron-3.5-lightning-free`, swap in when speed matters more than thoroughness) |
-| **Grok** | `grok` | Alternative cross-check / diverse second opinion when other sub-tasks are opencode-based; broad-context reasoning. |
-| **Google Antigravity** (fallback only — never a first pick) | `agy` → `--model <name> --effort <level>` (run `agy models` to confirm current names; prefer a `-pro-` tier) | Used only when Grok, or any OpenCode-kind agent above (Big Pickle/MiMo/Nemotron), is confirmed out of credits/rate-limited/tokens burned through — see step 5 below. Same role the failed agent would have held. |
-
-**Whenever ANY agent from this table is dispatched, explicitly tell the user
-which one (and briefly why) before starting it** — e.g. "dispatching Big
-Pickle for the implementation sub-task." Never fold agent selection into a
-pane-split/start sequence silently.
+**See [`../shared/agent-routing.md`](../shared/agent-routing.md) for the full
+routing table, OpenCode invocation shape, effort selection, and
+billing-failure fallback handling — read it before dispatching any agent in
+this skill.** The table's "Best-fit Agent" column is what Phase 3's
+decomposition table below maps sub-task types onto.
 
 **Strategy**: The worker agent (this skill) acts as the **orchestrator** — it
 decomposes the task, writes focused prompts for each specialist agent, collects
 results, synthesizes, and verifies. Specialist agents do the hands-on work.
-
-**OpenCode invocation shape**: every OpenCode-kind agent needs **both** `-m
-<provider/model>` (full `provider/model` form — bare model names aren't
-guaranteed to resolve) **and** `--agent <name>` (OpenCode's own agent persona,
-independent of the model). Only `build` (full tool access — reads/writes files,
-runs commands) and `plan` (read-only design/reasoning, no file changes) are
-launchable top-level personas here; `explore`/`general` are subagents OpenCode
-dispatches internally and aren't directly startable this way. Use `build` for
-any implementation/fix/test sub-task, `plan` for pure analysis/design.
-
-**Effort selection (Claude & Grok only — OpenCode has no effort concept)**:
-before starting any Claude or Grok sub-task agent in Phase 4, propose a
-recommended `--effort` level based on that sub-task's actual complexity (not a
-blanket default), and confirm with the user via `AskUserQuestion` before
-spawning — one question per Claude/Grok sub-task, batched into as few calls as
-fit the 4-question limit.
-- **Claude**: `--effort <level>`, one of `low`, `medium`, `high`, `xhigh`,
-  `max` (confirmed via `claude --help`). Recommend `medium` for a routine,
-  well-scoped implementation sub-task; `high` for one with real architecture
-  or correctness risk; `xhigh`/`max` only for something this skill's own Phase
-  3 decomposition flagged as unusually high-risk.
-- **Grok**: `--reasoning-effort <level>` (alias `--effort`); OpenCode's help
-  text doesn't enumerate exact values, but `low`/`medium`/`high` are confirmed
-  to work in practice. Map the same way as Claude's scale, with `high` standing
-  in for Claude's `xhigh`/`max` (Grok has no tier above `high`).
-- **Google Antigravity** (`agy` — Grok's designated fallback, see step 5
-  below): same `low`/`medium`/`high` `--effort` scale, plus a required
-  `--model <name>` (run `agy models` for current options; prefer a `-pro-`
-  tier for cross-check work). Only relevant if Antigravity is being started
-  as a mid-workflow replacement for a failed Grok sub-task.
-- Launch with the chosen level appended after `--`, e.g. `herdr agent start
-  <name> --kind claude --pane <id> -- --effort <level>` / `herdr agent start
-  <name> --kind agy --pane <id> -- --model <model-name> --effort <level>`.
+Unlike `kanban-task`'s proposal phase, sub-tasks here are actual
+implementation work, so OpenCode-kind agents use whichever persona
+(`build`/`plan`) the shared table's row specifies — there's no
+proposal-only override forcing everything to `plan`.
 
 ---
 
@@ -271,8 +234,8 @@ the orchestrator's own starting directory:
 | Architecture / high-level design | MiMo V2.5 | "Given this task and these constraints, propose a file-level plan with trade-offs" |
 | Complex implementation (multi-file) | Big Pickle / Claude | "Implement X in files A, B, C following pattern at Y. Run tests." |
 | Focused edits / bug fixes | Big Pickle | "Fix the issue at file.ts:NN per acceptance criteria Z" |
-| Long doc / spec reading | Nemotron 3 Ultra | "Read these 5 files and summarize the current pattern for X" |
-| Quick verification / lint | Nemotron 3 Ultra | "Run lint on these changed files and report errors" |
+| Long doc / spec reading | Big Pickle | "Read these 5 files and summarize the current pattern for X" |
+| Quick verification / lint | Big Pickle | "Run lint on these changed files and report errors" |
 | Reasoning / trade-off analysis | MiMo V2.5 | "Compare approach A vs B for this task given constraints" |
 | Independent cross-check on a completed sub-task (when both other agents used would be opencode-kind) | Grok | "Review this diff for X against the acceptance criteria; flag anything the implementer may have missed" |
 
@@ -318,10 +281,16 @@ For each sub-task in the decomposition plan:
    sub-task" / "dispatching Grok for the cross-check on X").
 
 2. **Send the composed prompt** (self-contained, no "as discussed" references):
-   - Repo path (`REPO_PATH` from Phase 1 for Universiteit Utrecht, the current
-     repo otherwise), task UUID, card description verbatim.
+   - Repo path (`REPO_PATH` from Phase 1 for Universiteit Utrecht, the
+     current repo otherwise) and the task UUID — tell the agent to run
+     `task <UUID> export` itself to read the full card (it has the same
+     `~/.task` access this session does) rather than pasting the card's
+     full description into the prompt; that avoids re-typing a
+     potentially-long card body into every sub-task's prompt.
    - Sub-task scope (exact files/functions to touch).
-   - Acceptance criteria for this sub-task.
+   - Acceptance criteria **for this sub-task specifically** (a distilled
+     subset of the card's full criteria, not the whole list — that's still
+     worth composing by hand since not every sub-task owns every criterion).
    - Verification command to run.
    - **Constraint**: "Stay in scope. Do not touch unrelated files. Report changes
      and any uncertainties. Do NOT run `backlog review/done`."
@@ -335,23 +304,10 @@ For each sub-task in the decomposition plan:
 4. **If agent blocks** (`herdr agent get` shows `blocked`): inspect, ask user
    how to respond — never answer approvals on their behalf.
 
-5. **If agent is out of credits / billing-failed** (the pane output or
-   `herdr agent read` shows an API/billing error — e.g. "insufficient credits",
-   "quota exceeded", "payment required" — or the prompt call errors/times out
-   with no real response): **stop that sub-task. Do not auto-retry or
-   auto-fallback to another agent.** Tell the user which agent/kind failed and
-   on which sub-task.
-   - **If the failed agent is Grok, or an OpenCode-kind agent (Big Pickle,
-     MiMo, Nemotron)** — hit its usage/rate limit, or burned through its
-     tokens/quota: say so explicitly, then use `AskUserQuestion` with
-     **`Google Antigravity — fallback for <failed agent> (recommended)`**
-     (`agy` kind) as the first option, alongside the usual next-best Agent
-     Portfolio alternative(s) for that sub-task type and `Skip this sub-task
-     for now`.
-   - **If the failed agent is Claude**, there is no designated single
-     fallback — offer the next-best alternative(s) for that sub-task type
-     from the Agent Portfolio table as before.
-   Resume Phase 4 for that sub-task only once the user picks.
+5. **If agent is out of credits / billing-failed**: stop that sub-task —
+   follow `../shared/agent-routing.md`'s "Billing-Failure / Rate-Limit
+   Fallback" section, substituting "sub-task" for "proposal slot." Resume
+   Phase 4 for that sub-task only once the user picks.
 
 ### Phase 5 — Synthesize & Verify (Orchestrator Work)
 

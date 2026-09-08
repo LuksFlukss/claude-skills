@@ -1,13 +1,13 @@
 ---
 name: kanban-task-eurocontrol
-description: Eurocontrol-environment variant of kanban-task — Claude is the only agent kind installed there (no OpenCode/Big Pickle/MiMo/Nemotron, no Grok, no Google Antigravity), and it's a single hardcoded board with no repo-name routing. Deep discovery → co-design loop with the user → Claude-only verification → pitch → approval → push. Use this instead of the regular kanban-task skill whenever the card belongs on the Eurocontrol board.
+description: Eurocontrol-environment variant of kanban-task — Claude is the only agent kind installed there (no OpenCode/Big Pickle/MiMo, no Grok, no Google Antigravity), and it's a single hardcoded board with no repo-name routing. Deep discovery → co-design loop with the user → Claude-only verification → pitch → approval → push. Use this instead of the regular kanban-task skill whenever the card belongs on the Eurocontrol board.
 ---
 
 # Kanban Task — Eurocontrol Environment (Claude-Only)
 
 This is the Eurocontrol-specific variant of the regular `kanban-task` skill.
 **Only `claude` is installed as an agent kind in this environment** — no
-OpenCode (Big Pickle / MiMo V2.5 / Nemotron), no Grok, no Google Antigravity.
+OpenCode (Big Pickle / MiMo V2.5), no Grok, no Google Antigravity.
 Every agent dispatch in this skill uses `--kind claude`, full stop. Use the
 regular `kanban-task` skill for Guiñotazo / Universiteit Utrecht work; use
 this one only when the card belongs on the Eurocontrol board.
@@ -262,8 +262,10 @@ explicitly approves.
 ### Phase 6 — Draft the Final Card (Using the Template)
 
 Once the user approves the solution, write the complete card using the
-template below. Fill every applicable section; omit ones that genuinely
-don't apply. **Every file reference must have a line anchor.**
+template at [`../shared/card-template.md`](../shared/card-template.md) —
+same one `kanban-task` and `product-owner` use. Fill every applicable
+section; omit ones that genuinely don't apply. **Every file reference must
+have a line anchor.**
 
 **The `## Verification Plan` section is mandatory, not optional** — never
 substitute it with just "run the test suite" when the task touches anything a
@@ -272,67 +274,17 @@ zero conversation context — including the `worker-eurocontrol` skill
 executing this card later — can mechanically confirm each Acceptance
 Criterion is actually met.
 
-#### Task Card Template
+**This environment never uses the shared template's `<Universiteit Utrecht
+cards only>` Repo line or its `## Rollout & Blast Radius` section** — this
+board has no repo-name routing and no multi-repo blast radius, so both are
+always omitted here, not just conditionally.
+
+**Use this environment's own `## Verification Notes` wording, not the
+shared template's** — the shared file's wording assumes the multi-kind
+Agent/Model Routing table (`Agents used (routed): <e.g. Big Pickle + Grok>`),
+which doesn't exist in this Claude-only environment:
 
 ```
-<TITLE — one line, imperative verb first>
-
-<CONTEXT — 1-3 sentences: why this task exists, current behavior in plain
-words, and what the acceptance hinges on. If gated on another card, say so.>
-
-## Current State (verified)
-
-<What is true in the code TODAY, anchored to real paths/lines. Facts only:
-- `file.ts:NN` — what it contains / does today.
-- Live test count: N/N (verified by running the confirmed verification command).
-- Verification command output: <paste key lines from the live run>
-Do not suggest fixes here — just pin the starting point.>
-
-## Goals
-
-1. <outcome 1 — what the user sees or what works after>
-2. <outcome 2>
-3. <...>
-
-## Implementation Guidance
-
-<The "how" — as exact as possible so the builder needs no context:
-- file.ts:NN — change <function/element> to ...
-- Reuse the existing <pattern/helper/module> at <path> rather than inventing a new one.
-- Call out tricky timing/order dependencies explicitly.>
-
-## Constraints / Non-Goals
-
-- Do NOT touch <files/modules>.
-- Out of scope for this card: <secondary idea> (separate follow-up card).
-- No new dependencies unless needed; prefer <existing stack feature>.
-
-## Acceptance Criteria
-
-- <observable, verifiable criterion 1>
-- <observable, verifiable criterion 2>
-- All project verification commands clean (quote the confirmed command verbatim).
-- Existing tests stay <N>/<N> (live count from Phase 1).
-- Keep changes uncommitted unless told otherwise.
-
-## Verification Plan
-
-<MANDATORY — one concrete, executable step per Acceptance Criterion above, in
-the same order, so a builder (or the `worker-eurocontrol` skill) can
-mechanically confirm "done". For each criterion give:
-- **Check**: the exact command/query/manual step to run.
-- **Expected result**: what a pass looks like (exact value, exit code, diff
-  shape, absence of X, etc.) — not just "it works".
-- **Who runs it**: note explicitly if this step is unsafe/expensive/needs
-  elevated access and must be handed to the user rather than run by an agent.>
-
-<optional>
-## Parent / Depends On
-
-- Parent card: <uuid or title if subtask>
-- Gated on: <card title / uuid> landing first.
-</optional>
-
 ## Verification Notes (for the builder)
 
 - Multi-agent verification: <Performed / Not performed — HERDR_ENV=1 missing>
@@ -351,7 +303,7 @@ Use `AskUserQuestion` (single call, up to 4 questions) to get:
    `Request changes` (user describes adjustments; loop back to Phase 6).
 2. **Which agent should build it?** — Since only Claude is installed in this
    environment, offer only `Claude — recommended` and `Unassigned — leave
-   agent blank`. Do not offer Big Pickle/MiMo/Nemotron/Grok/Antigravity —
+   agent blank`. Do not offer Big Pickle/MiMo/Grok/Antigravity —
    none of them run here.
 3. **What priority?** — Options: `High` (blocking/urgent), `Medium` (normal
    backlog work), `Low` (nice-to-have). Don't default silently.

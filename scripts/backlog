@@ -50,19 +50,25 @@ run() {
 }
 
 kanban_report() {
+  # NOTE: this filter string is re-tokenized by Taskwarrior's own filter
+  # parser (it's a stored config value, not a shell-parsed argument), so a
+  # multi-word $PROJECT needs its own quoting here or it silently splits
+  # into "project:<first-word>" + a stray bare-word filter term, causing
+  # false "no matches" for any project name with a space (e.g. "Universiteit
+  # Utrecht") even when matching tasks exist.
   if repo_required; then
     run \
       rc.report.kanban.columns=id,state,agent,repo,description \
       rc.report.kanban.labels=ID,State,Agent,Repo,Description \
       rc.report.kanban.sort=id+ \
-      "rc.report.kanban.filter=project:$PROJECT and status:pending" \
+      "rc.report.kanban.filter=project:'$PROJECT' and status:pending" \
       kanban
   else
     run \
       rc.report.kanban.columns=id,state,agent,description \
       rc.report.kanban.labels=ID,State,Agent,Description \
       rc.report.kanban.sort=id+ \
-      "rc.report.kanban.filter=project:$PROJECT and status:pending" \
+      "rc.report.kanban.filter=project:'$PROJECT' and status:pending" \
       kanban
   fi
 }
@@ -120,7 +126,23 @@ cmd_add() {
     exit 2
   fi
   [ -n "$repo" ] && repo="repo:$repo"
-  run add state:todo $priority $agent $repo "$desc"
+
+  # Build the arg list positionally instead of interpolating $priority/$agent/
+  # $repo unquoted — unquoted interpolation both (a) word-splits any
+  # multi-word value (e.g. a value with a space) into separate stray
+  # arguments instead of one attribute:value pair, and (b) can't distinguish
+  # "unset" from "empty", so this is the portable POSIX-sh way to skip an arg
+  # entirely when unset while still passing a set one as a single token.
+  set -- add state:todo
+  [ -n "$priority" ] && set -- "$@" "$priority"
+  [ -n "$agent" ] && set -- "$@" "$agent"
+  [ -n "$repo" ] && set -- "$@" "$repo"
+  set -- "$@" "$desc"
+
+  if ! run "$@"; then
+    echo "failed to push to backlog: task add exited non-zero (see error above) — task was NOT created" >&2
+    exit 1
+  fi
   echo "pushed to backlog (state:todo): $desc"
 }
 

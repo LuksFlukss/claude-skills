@@ -112,93 +112,33 @@ it. This does not apply to Guiñotazo (single-repo board).
 ## Agent/Model Routing (Strength & Cost Based)
 
 Herdr has no built-in cost-aware scheduler — routing is a manual lookup this
-skill performs using the task type classified in Phase 2. Use this table to
-pick agents for **both** Phase 3 (solution proposals) and Phase 7 (build
-assignment) instead of defaulting to the same pair every time.
-
-| Task Type | Best-fit Agent | Herdr Kind / Model / OpenCode Agent | Cost Tier | Rationale |
-|-----------|---------------|---------------------|-----------|-----------|
-| Architecture / high-level design, trade-off analysis | MiMo V2.5 | `opencode` → `-m opencode/mimo-v2.5-free --agent plan` | Free | Strong reasoning/planning at no cost — use for design-heavy tasks. `--agent plan` is OpenCode's read-only design/reasoning persona, matching this task type. |
-| Complex multi-file implementation, large refactors | Claude | `claude` (Sonnet/Opus) | $$ (paid) | Best correctness on architecture-sensitive or engine-purity-sensitive changes |
-| Everyday multi-file coding, focused bug fixes, test writing | Big Pickle | `opencode` → `-m opencode/big-pickle --agent build` | $ (low) | Good default for routine implementation, cheaper than Claude. `--agent build` is OpenCode's full-tool-access implementation persona. |
-| Long doc/spec reading, quick lint/summarization | Nemotron 3 Ultra | `opencode` → `-m opencode/nemotron-3-ultra-free --agent build` | Free | Fast and cheap for read-heavy or mechanical sub-tasks. (A faster/lighter alternative exists: `opencode/nemotron-3.5-lightning-free` — swap in if speed matters more than thoroughness for the specific sub-task.) |
-| Alternative cross-check / diverse second opinion, broad-context reasoning | Grok | `grok` | $ (paid) | Different model family from the rest of the table — good diversity pick for a verification cross-check when both other slots would otherwise be opencode-based. |
-| Fallback (used only when Grok, or any OpenCode-kind agent above — MiMo/Big Pickle/Nemotron — hits its usage/rate limit or runs out of tokens; never a first pick) | Google Antigravity | `agy` → `--model <name> --effort <level>` (run `agy models` first to confirm current model names — prefer a `-pro-` tier for cross-check work, e.g. `gemini-3.1-pro-high`) | Google-account quota | Different model family from every other row — substituted in only when the agent it's replacing is confirmed unavailable. |
-
-**Whenever ANY agent from this table is dispatched — Grok included, but also
-Claude/Big Pickle/MiMo/Nemotron/Antigravity — explicitly tell the user which
-one (and briefly why) before starting it.** Never fold an agent selection
-into a pane-split/start sequence silently.
+skill performs using the task type classified in Phase 2. **See
+[`../shared/agent-routing.md`](../shared/agent-routing.md) for the full
+routing table, OpenCode invocation shape, effort selection, and
+billing-failure fallback handling — read it before dispatching any agent in
+this skill.** Use the table there to pick agents for **both** Phase 3
+(solution proposals) and Phase 7 (build assignment) instead of defaulting to
+the same pair every time.
 
 **Classification (do this in Phase 2, right after clarifying the ask):** tag
-the clarified task with one primary task type from the left column (e.g.
-"multi-file implementation", "architecture", "focused fix", "doc-heavy").
-Carry this tag forward — it drives both the solution-proposal pair (Phase 3)
-and the recommended builder (Phase 7).
-
-**Cost discipline:** prefer the Free tier whenever the task type matches
-(MiMo/Nemotron) rather than defaulting to Claude. Only route to Claude when
-the task is genuinely complex multi-file work, touches `src/engine` purity
-rules, or the classification is itself "architecture" at high risk. Never pick
-Claude for both proposal slots — it wastes the parallel-exploration benefit
-and the cost budget for no extra signal.
+the clarified task with one primary task type from the shared table's left
+column (e.g. "multi-file implementation", "architecture", "focused fix",
+"doc-heavy"). Carry this tag forward — it drives both the solution-proposal
+pair (Phase 3) and the recommended builder (Phase 7).
 
 **Solution-proposal pair (Phase 3) rule:** pick the best-fit agent for the
 classified task type as one proposer, and a **different kind** with a **lower
 or equal cost tier** as the second — diversity of kind matters more than raw
 strength for surfacing genuinely different solutions, not just two takes on
-the same one. Prefer two Free-tier agents unless the task's risk profile
-(engine purity, architecture) justifies spending a Claude slot. If the
+the same one. Prefer a Free-tier second slot (MiMo) unless the task's risk
+profile (engine purity, architecture) justifies spending a Claude slot. If the
 best-fit agent and the natural second pick would both be `opencode`-kind (e.g.
-Big Pickle + Nemotron), consider swapping the second for **Grok** instead — a
-genuinely different model family is more likely to propose a real alternative
-than an opencode-vs-opencode pair.
-
-**OpenCode invocation shape:** always launch OpenCode-kind agents with both
-`-m <provider/model>` (the model, full `provider/model` form — bare model
-names are not guaranteed to resolve) **and** `--agent <name>` (OpenCode's own
-agent persona, separate from the model choice). Only `build` and `plan` are
-launchable top-level personas for our purposes (`explore`/`general` are
-subagents OpenCode dispatches internally, not directly startable via this
-flag) — use `build` for any sub-task that needs to read/write files or run
-commands (implementation, testing, lint fixes), and `plan` for a sub-task that
-is pure analysis/design/reasoning with no file changes expected. Via Herdr:
-`herdr agent start <name> --kind opencode --pane <id> -- -m opencode/<model>
---agent <build|plan>`.
-
-**Effort selection (Claude & Grok only — OpenCode has no effort concept):**
-Before starting **any** Claude or Grok agent in this skill (Phase 3's
-solution-proposal pair, whichever slots landed on Claude/Grok per the table
-above),
-propose a recommended effort level based on the task's actual complexity —
-don't just default to the tool's default effort. Then confirm with the user
-via `AskUserQuestion` before spinning the agent up (one question per Claude/Grok
-agent about to be started, batched into as few calls as fits the 4-question
-limit). Present the recommended level first, labeled `<level> — recommended
-(<one-line reason>)`, with 1-2 adjacent levels as alternatives.
-
-- **Claude** accepts `--effort <level>`: `low`, `medium`, `high`, `xhigh`, `max`
-  (confirmed via `claude --help`). Recommend `medium` for routine verification
-  of a well-scoped design, `high` for genuinely complex/architecture-risk
-  diagnosis, `xhigh`/`max` only for a design this skill's own Phase 3 flagged
-  as unusually high-risk (e.g. security/trust-boundary or engine-purity-critical).
-- **Grok** accepts `--reasoning-effort <level>` (alias `--effort`); OpenCode's
-  CLI help does not enumerate exact accepted values, but `low`/`medium`/`high`
-  are confirmed to work in practice (a pane's status line showed `Grok 4.6
-  (high)` after using `high`). Recommend the same way as Claude's scale,
-  substituting `high` where Claude would get `xhigh`/`max` (Grok has no higher
-  tier than `high`).
-- **Google Antigravity** (`agy` — Grok's designated fallback, Phase 3.2) also
-  accepts `--effort <level>`: `low`, `medium`, `high` (confirmed via
-  `agy --help`) — same three-tier scale as Grok, no `xhigh`/`max`. It also
-  needs `--model <name>` (run `agy models` to list current options; prefer a
-  `-pro-` tier for cross-check work). If Antigravity is being started as a
-  mid-workflow replacement for a failed Grok, ask the effort question the same
-  way, just labeled for Antigravity instead.
-- Launch with the chosen level: `herdr agent start <name> --kind claude --pane
-  <id> -- --effort <level>` / `herdr agent start <name> --kind grok --pane <id>
-  -- --effort <level>` / `herdr agent start <name> --kind agy --pane <id> --
-  --model <model-name> --effort <level>`.
+Big Pickle + MiMo — the only two OpenCode-kind agents left in rotation),
+consider swapping the second for **Grok** instead — a genuinely different
+model family is more likely to propose a real alternative than an
+opencode-vs-opencode pair. Never pick Claude for both proposal slots — it
+wastes the parallel-exploration benefit and the cost budget for no extra
+signal.
 
 ### Phase 0 — Ensure Kanban Board is Up
 
@@ -228,8 +168,8 @@ to do yourself.
 
 1. **Dispatch helper agents in parallel via Herdr** — these are read-only
    research briefs, so per the Routing table's "Long doc/spec reading, quick
-   lint/summarization" row, default each to **Nemotron 3 Ultra** (`opencode`
-   → `-m opencode/nemotron-3-ultra-free --agent plan`, free tier) unless a
+   lint/summarization" row, default each to **Big Pickle** (`opencode`
+   → `-m opencode/big-pickle --agent plan`, low cost) unless a
    given scan clearly calls for deeper trade-off judgment, in which case use
    **MiMo V2.5** (`-m opencode/mimo-v2.5-free --agent plan`) instead — both
    forced to the read-only `plan` persona, since Phase 1 is discovery, not
@@ -258,7 +198,7 @@ to do yourself.
    TAB_JSON=$(herdr tab create --cwd "$PWD" --no-focus)
    TAB_ID=$(echo "$TAB_JSON" | jq -r '.result.tab.tab_id')
    PANE_ID=$(echo "$TAB_JSON" | jq -r '.result.root_pane.pane_id')
-   herdr agent start scan-structure --kind opencode --pane "$PANE_ID" -- -m opencode/nemotron-3-ultra-free --agent plan
+   herdr agent start scan-structure --kind opencode --pane "$PANE_ID" -- -m opencode/big-pickle --agent plan
    herdr agent prompt scan-structure "<self-contained brief>" --wait --timeout 300000
    ```
    Brief each agent like a colleague with zero context: give it the repo root,
@@ -367,14 +307,14 @@ opencode pair every time.
 
 **Persona override for this phase — read the table's Herdr Kind for the
 *model*, never for the persona:** the table's `--agent build` entries
-(Big Pickle, Nemotron) are written for when that agent is later assigned to
+(Big Pickle) are written for when that agent is later assigned to
 actually *build* the card (Phase 7's recommendation, or the `worker` skill
 picking it up afterward) — **not** for this proposal step. Every
 OpenCode-kind agent launched in Phase 3, regardless of which row it came
 from, **must use `--agent plan`** (read-only), never `build` — proposal-only
 means the agent can't write files even if it wanted to, not just that the
 prompt asks it not to. MiMo already defaults to `plan`; override Big
-Pickle/Nemotron to `plan` here even though their table row says `build`.
+Pickle to `plan` here even though its table row says `build`.
 Claude and Grok have no read-only persona concept — for those, the 3.1
 prompt's "DO NOT MODIFY ANY FILES" line is the only guardrail, so never omit
 it.
@@ -396,8 +336,11 @@ agent in its own new tab, then send the Phase 3.1 prompt:
 
 ```bash
 # Example: task classified as "multi-file implementation" ->
-# proposer A = Big Pickle (best-fit, low cost), proposer B = Nemotron (free, different kind)
-# Both forced to --agent plan here (read-only) — this is a proposal, not the build.
+# proposer A = Big Pickle (best-fit, low cost). The natural second pick (MiMo)
+# would also be opencode-kind, so per the swap rule, proposer B = Grok instead
+# (different model family, needs an effort choice per the Effort Selection step).
+# Both OpenCode-kind agents are forced to --agent plan here (read-only) — this
+# is a proposal, not the build.
 TAB_A_JSON=$(herdr tab create --cwd "$PWD" --no-focus)          # -> tab A
 TAB_A_ID=$(echo "$TAB_A_JSON" | jq -r '.result.tab.tab_id')
 PANE_A_ID=$(echo "$TAB_A_JSON" | jq -r '.result.root_pane.pane_id')
@@ -406,7 +349,7 @@ herdr agent start propose-a --kind opencode --pane "$PANE_A_ID" -- -m opencode/b
 TAB_B_JSON=$(herdr tab create --cwd "$PWD" --no-focus)          # -> tab B
 TAB_B_ID=$(echo "$TAB_B_JSON" | jq -r '.result.tab.tab_id')
 PANE_B_ID=$(echo "$TAB_B_JSON" | jq -r '.result.root_pane.pane_id')
-herdr agent start propose-b --kind opencode --pane "$PANE_B_ID" -- -m opencode/nemotron-3-ultra-free --agent plan
+herdr agent start propose-b --kind grok --pane "$PANE_B_ID" -- --effort medium
 
 # Example: task classified as "architecture" with engine-purity risk ->
 # proposer A = Claude (paid, correctness-critical) at user-confirmed effort,
@@ -433,25 +376,11 @@ Note the tab/pane/agent identifiers Herdr assigns to each of these two
 proposal agents (`herdr agent list` / `herdr tab list`) — you'll need the
 `tab_id`s in Phase 9 to close these agents out once the card is pushed.
 
-**If an agent is out of credits / billing-failed** (pane output or
-`herdr agent read` shows a billing/quota error, or the call errors/times out
-with no real response): **do not auto-retry or silently fall back.** Tell the
-user which agent/kind failed.
-
-- **If the failed agent is Grok, or an OpenCode-kind agent (Big Pickle, MiMo,
-  Nemotron)** — hit its usage/rate limit, or burned through its available
-  tokens/quota: say so explicitly, then use `AskUserQuestion` with
-  **`Google Antigravity — fallback for <failed agent> (recommended)`**
-  (`agy` kind) as the first option, alongside the usual next-best
-  Routing-table alternative(s) for that task type and `Skip this proposal
-  slot`. This is a designated, named fallback — not a generic "pick anything"
-  choice — but it is still never applied silently; the user confirms it via
-  the question like any other re-dispatch.
-- **If the failed agent is Claude**, there is no designated single fallback
-  (Claude has no free/quota-limited sibling in this table) — offer the
-  next-best alternative(s) from the Routing table as before.
-
-Re-dispatch to whichever the user picks before moving to Phase 4.
+**If an agent is out of credits / billing-failed**, follow
+`../shared/agent-routing.md`'s "Billing-Failure / Rate-Limit Fallback"
+section — same rule, this phase's proposal slot is just the thing being
+re-dispatched. Re-dispatch to whichever the user picks before moving to
+Phase 4.
 
 **If no Herdr / HERDR_ENV=1**: design the solution yourself (same bullet list
 as the 3.1 brief above) and skip to Phase 4 noting only one internal proposal
@@ -486,6 +415,29 @@ a replacement for the old critique-only phase — most tasks don't need it, and
 defaulting to it every time reintroduces the cost/latency this restructuring
 removed.
 
+**Mandatory verify pass — narrower than the escalation above (fact-checking,
+not re-design), but fires on a concrete trigger rather than a judgment call,
+so it fires more often:** spin up **one** Herdr agent (same routing/
+`--agent plan`/"DO NOT MODIFY ANY FILES" rules) to check the synthesized
+plan's specific technical claims against the live repo — not to re-litigate
+the whole design — whenever **either** holds:
+
+- The task touches a template/shared-infra repo consumed by more than one
+  other repo (real blast radius beyond this repo), or
+- The synthesis depends on a specific technical claim (a function/API/
+  syntax/tool behavior) that only one of the two Phase 3 proposals actually
+  verified — not just asserted — and adopting it into the synthesis means
+  trusting that single, unverified source.
+
+Brief this agent narrowly — name the exact claims to check (e.g. "confirm
+the Azure DevOps `iif()` template function collapses this exact pattern the
+way the plan assumes" / "confirm these file:line anchors still match current
+HEAD" / "confirm this parameter name doesn't collide with anything the 3
+consumer repos already pass") rather than handing it the whole plan to
+re-review. If it disproves something the plan depends on, that's a
+correction to fold back into the synthesis before pitching — not new scope,
+and not grounds to restart Phase 3.
+
 **Do not present this yet.** It's pitched, with its provenance, in Phase 5.
 
 ### Phase 5 — Pitch: What We Explored, and Why This Wins
@@ -516,6 +468,19 @@ above, not hypothetical ones. If Phase 3 ran with only one internal proposal
 Same as before: exact commands, expected test count, open questions, explicit
 out-of-scope items.
 
+**## Rollout & Blast Radius** (mandatory whenever the card touches a
+template/shared-infra repo consumed by more than one other repo, or
+otherwise reaches beyond this repo — omit entirely for a self-contained
+single-repo fix, don't pad it in where it doesn't apply):
+
+- **Affected**: the actual list of consuming repos/environments — not
+  "downstream systems" as a vague placeholder.
+- **Rollout**: how the change reaches them safely (a version tag, an
+  opt-in/default-off flag, a staged rollout) — never "it just lands on
+  everyone's next run" for a behavior change with real consequences.
+- **Rollback**: what undoing this looks like if a consumer breaks after
+  adopting it.
+
 Ask the user to react: **Approve as-is**, **Show me the raw agent reports**
 (pull the full Phase 3 outputs before deciding), **Request changes**, or
 **Pick the other explored approach instead**. Iterate here — refine the
@@ -529,9 +494,11 @@ synthesis based on feedback — until the user explicitly approves.
 
 ### Phase 6 — Draft the Final Card (Using the Template)
 
-Once the user approves the solution, write the complete card using the template
-below. Fill every applicable section; omit ones that genuinely don't apply.
-Keep it dense but readable. **Every file reference must have a line anchor.**
+Once the user approves the solution, write the complete card using the
+template at [`../shared/card-template.md`](../shared/card-template.md) — read
+it now if you haven't already. Fill every applicable section; omit ones that
+genuinely don't apply. Keep it dense but readable. **Every file reference
+must have a line anchor.**
 
 **The `## Verification Plan` section is mandatory, not optional** — never
 substitute it with just "run the test suite" when the task touches anything a
@@ -541,109 +508,14 @@ with zero conversation context — including the `worker` skill executing this
 card later — can mechanically confirm each Acceptance Criterion is actually
 met, not just that the build didn't break.
 
-#### Task Card Template
+**The `## Rollout & Blast Radius` section is mandatory whenever the card
+touches a template/shared-infra repo consumed by more than one other repo**
+(carry it over verbatim from Phase 5's pitch — this is not new work, just
+transcription) — omit it entirely for a self-contained single-repo change.
 
-```
-<TITLE — one line, imperative verb first, e.g. "Add card-skin system with
-per-skin assets and a Settings selector">
-
-<CONTEXT — 1-3 sentences: why this task exists, current behavior in plain words,
-and what the acceptance hinges on. If gated on another card, say so.>
-
-<Universiteit Utrecht cards only — mandatory: **Repo:** `<absolute path, e.g.
-/home/uu/tf-azure-aipf-deployment>` — this becomes the card's `repo:` UDA at
-push time (Phase 8) and is how `worker` knows which checkout to apply changes
-in. Omit this line entirely for Guiñotazo cards.>
-
-## Current State (verified)
-
-<What is true in the code TODAY, anchored to real paths/lines. Facts only:
-- `file.ts:NN` — what it contains / does today.
-- Currently X does Y; the mechanism is Z.
-- Live test count: N/N (verified by running the confirmed verification command).
-- Verification command output: <paste key lines from the live run>
-Do not suggest fixes here — just pin the starting point.>
-
-## Goals
-
-1. <outcome 1 — what the user sees or what works after>
-2. <outcome 2>
-3. <...>
-
-## Implementation Guidance
-
-<The "how" — as exact as possible so the builder needs no context:
-- file.ts:NN — change <function/element> to ...
-- Reuse the existing <pattern/helper/module> at <path> rather than inventing a new one.
-- Respect <existing settings/reducer/actions mechanism> at <path>.
-- Keep <module> pure/untouched (additive exports only via <index>); no GameState changes.
-- Call out tricky timing/order dependencies explicitly (e.g. "this runs before X; do not reorder").>
-
-## Constraints / Non-Goals
-
-- Do NOT touch <files/modules>.
-- Out of scope for this card: <secondary idea> (separate follow-up card).
-- No new dependencies unless needed; prefer <existing stack feature>.
-- Engine purity: bots/UI must not mutate src/engine; additive exports only via src/engine/index.ts.
-
-## Acceptance Criteria
-
-- <observable, verifiable criterion 1>
-- <observable, verifiable criterion 2>
-- All project verification commands clean (quote the confirmed command verbatim,
-  e.g. `npm run lint && npm run test && npm run build`).
-- Existing tests stay <N>/<N> (live count from Phase 1).
-- Keep changes uncommitted unless told otherwise.
-
-## Verification Plan
-
-<MANDATORY — one concrete, executable step per Acceptance Criterion above, in
-the same order, so a builder (or the `worker` skill) can mechanically confirm
-"done" without re-deriving what "done" means. A single generic test/lint/build
-command is NOT sufficient on its own whenever the task also changes external
-or stateful things (infra resources, data migrations, DB rows, config that
-isn't covered by the test suite) — spell those checks out individually too.
-For each criterion give:
-- **Check**: the exact command/query/manual step to run.
-- **Expected result**: what a pass looks like (exact value, exit code, diff
-  shape, absence of X, etc.) — not just "it works".
-- **Who runs it**: note explicitly if this step is unsafe/expensive/needs
-  elevated access and must be handed to the user rather than run by an agent.
-  Name *which* skill defines the handoff protocol, not just that one exists —
-  a fresh builder with zero context can't chase an unnamed reference (e.g.
-  "see the `worker` skill's Terraform Plan/Apply Protocol for
-  `terraform plan/apply` against live state", not just "per protocol"), or
-  anything needing IAM/RBAC the builder may not hold.
-
-Example (infra task):
-1. Criterion "state blob renamed without data loss" → Check:
-   `az storage blob show --account-name X --container-name Y --name <old>`
-   and `...--name <new>` → Expected: both exist, same `contentMd5`. Runs: agent
-   (read-only, safe).
-2. Criterion "terraform reads the new key cleanly" → Check: `terraform init
-   -backend-config=... -reconfigure && terraform plan` → Expected: plan shows
-   zero unexpected resource changes. Runs: **user** — see the `worker` skill's
-   "Terraform Plan/Apply Protocol" section; never run plan/apply directly
-   against Universiteit Utrecht state, hand the exact command to the user
-   instead.
->
-
-<optional>
-## Parent / Depends On
-
-- Parent card: <uuid or title if subtask>
-- Gated on: <card title / uuid> landing first.
-</optional>
-
-## Verification Notes (for the builder)
-
-- Solution proposals: <Performed / Not performed — HERDR_ENV=1 missing>
-- Task type classification: <e.g. "multi-file implementation">
-- Agents used (routed): <e.g. Big Pickle + Nemotron 3 Super / N/A>
-- What was explored and why this won: <summary of Phase 5's "What I Explored" /
-  "Why It Wins", i.e. the Phase 4 reconciliation>
-- Verification command to run: <exact command>
-```
+The shared template's `<Universiteit Utrecht cards only>` line references
+"Phase 8" for the push step and the `worker` skill for repo resolution —
+that's this skill's Phase 8, unchanged.
 
 ### Phase 7 — Final Approval Gate (Card Push)
 
@@ -728,6 +600,9 @@ An agent should be able to hand this card to a fresh session and see exactly:
   result, not just "the test suite passed")
 - **Solution pedigree** (which agents proposed what, and why the chosen
   approach won — or a note that only one internal proposal existed)
+- **Blast radius, when it exists** (`## Rollout & Blast Radius` — who's
+  affected, how the change reaches them safely, how to roll it back; omitted
+  only when the change is genuinely self-contained to this one repo)
 
 And the user **always** signs off at two gates: solution pitch (Phase 5) and
 final card (Phase 7).
@@ -767,6 +642,14 @@ not skip any phase.
 - **The parallel solution-proposal step is mandatory when Herdr is available**
   — if `HERDR_ENV=1` is set but Herdr fails, surface the error and ask the
   user whether to proceed with a single internal proposal or retry.
+- **Fact-check the synthesis before pitching it, when the trigger fires** —
+  Phase 4's mandatory verify pass (blast radius beyond this repo, or a
+  technical claim only one proposal verified) is narrower than the optional
+  full-plan sanity-check above it, but not skippable when its trigger holds.
+- **Name the blast radius, don't let it hide in prose** — a card touching a
+  shared/template repo with more than one consumer gets its own
+  `## Rollout & Blast Radius` section (Phase 5 pitch and Phase 6 card); a
+  single-repo fix omits it rather than padding one in.
 - **Keep changes uncommitted** — the card's acceptance criteria includes this.
 - **Anchor everything** — every claim about current code must have a `file:line`
   reference from your Phase 1 scan.

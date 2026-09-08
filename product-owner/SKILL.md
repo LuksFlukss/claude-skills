@@ -165,59 +165,48 @@ npm run lint && npm run test && npm run build   # or detected verification cmd
 2. **Scan repo** — anchor to real files/lines (grep/read).
 3. **Confirm tooling** — detect stack, run verification, confirm with user.
 4. **Draft solution** — internal design (files touched, why, trade-offs, non-goals).
-5. **Multi-agent verification (Herdr)** — see below. Skip silently if `HERDR_ENV=1` is not set (note the skip in the card).
-6. **Draft card** — use template below (every claim has `file:line`), folding in verification findings.
-7. **Approval gate** — present full card, `AskUserQuestion`: `Approve` / `Request changes`.
-8. **Agent + Priority** — ask (recent agents from board + `Unassigned`; H/M/L).
-9. **Push** — `bash scripts/backlog add "..." --priority X --agent Y [--repo
+5. **Draft card** — use template below (every claim has `file:line`).
+6. **Approval gate** — present full card, `AskUserQuestion`: `Approve` / `Request changes`.
+7. **Agent + Priority** — ask (recent agents from board + `Unassigned`; H/M/L).
+8. **Push** — `bash scripts/backlog add "..." --priority X --agent Y [--repo
    <absolute path>]`. `--repo` is **required** when `BACKLOG_PROJECT` is
    Universiteit Utrecht (the wrapper refuses the push without it on that
    board); omit it for Guiñotazo/other single-repo boards.
-10. **Confirm** — report card ID, state, board URL.
-11. **Close verification agents** — close the panes/agents opened in step 5.
+9. **Confirm** — report card ID, state, board URL.
+
+**Author mode is the fast lane — no automated multi-agent verification runs
+here.** If a draft needs independent multi-agent scrutiny before it's
+written up (parallel solution proposals, synthesis, a pitch showing what was
+explored and why), that's what `kanban-task` is for; running the same kind
+of verification twice across two skills was pure overhead. The human
+approval gate (step 6) is still mandatory either way.
 
 ### Multi-Agent Verification (Herdr) — Verifier A routed dynamically, Verifier B fixed
 
 Verifier B is always the Claude orchestrator (below). Verifier A is **not**
-fixed to one agent — pick it per run from the same kind of task-type routing
-table `kanban-task` uses, based on what the drafted solution actually is:
+fixed to one agent — pick it per run from
+[`../shared/agent-routing.md`](../shared/agent-routing.md)'s routing table
+(same file `kanban-task` and `worker` use), based on what the drafted
+solution actually is:
 
-| Task Type | Verifier A pick | Herdr invocation | Cost |
-|-----------|-----------------|-------------------|------|
-| Architecture / high-level design, trade-off analysis | MiMo V2.5 | `opencode` → `-m opencode/mimo-v2.5-free --agent plan` | Free |
-| Everyday multi-file coding, focused bug fixes, test writing | Big Pickle | `opencode` → `-m opencode/big-pickle --agent build` | Low |
-| Long doc/spec reading, quick lint/summarization | Nemotron 3 Ultra | `opencode` → `-m opencode/nemotron-3-ultra-free --agent build` | Free |
-| Alternative cross-check / diverse second opinion, broad-context reasoning, or high-risk (engine-purity/security) work | Grok | `grok --effort <level>` | Paid |
-| Fallback (only when Grok, or any OpenCode-kind pick above — MiMo/Big Pickle/Nemotron — hits its usage/rate limit or runs out of tokens; never a first pick) | Google Antigravity | `agy --model <name> --effort <level>` (run `agy models` for current names; prefer a `-pro-` tier) | Google-account quota |
-
-1. **Classify** the drafted solution by primary task type (same categories as
-   the table), the same way `kanban-task` Phase 3 does.
+1. **Classify** the drafted solution by primary task type (the shared
+   table's categories), the same way `kanban-task` Phase 3 does.
 2. **Pick Verifier A** from the matching row. Default to the Free/Low-cost
    pick that fits — don't reach for Grok just because it's listed; use it
    only when the row genuinely says diverse-cross-check or the draft is
    itself high-risk.
-3. **If Verifier A landed on Grok or Google Antigravity** (the two rows here
-   with an effort concept), propose a recommended `--effort` level
-   (`low`/`medium`/`high`) and confirm via `AskUserQuestion` before starting
-   it — same process as `kanban-task`'s Effort Selection step: present the
-   recommendation first, labeled `<level> — recommended (<one-line reason>)`,
-   with 1-2 adjacent levels as alternatives. Recommend `low` for a simple,
-   well-scoped pitch/fix, `medium` for routine card verification, `high` only
-   when the draft is itself unusually high-risk. Antigravity also needs
-   `--model <name>` (run `agy models` for current options). Every other row
-   (MiMo/Big Pickle/Nemotron, all `opencode`-kind) has no effort concept —
-   just launch it with `-m`/`--agent`, no question needed.
-   **Whichever agent Verifier A lands on, explicitly tell the user which one
-   (and briefly why) before starting it** — don't fold it in silently.
-4. If Verifier A is out of credits/billing-failed (hit its usage/rate limit,
-   or burned through its tokens/quota — this applies to every possible
-   Verifier A pick: Grok or any OpenCode-kind agent), tell the user which
-   agent/kind failed, say so explicitly, then ask (via `AskUserQuestion`)
-   with **`Google Antigravity — fallback for <failed agent> (recommended)`**
-   as the first option, alongside the usual next-best row(s) from the table
-   and "Skip this verification slot" — same as `kanban-task` 4.2's
-   billing-failure handling. (Verifier B is always Claude, a fixed role, not
-   routed from this table.)
+3. **Effort selection** (Grok/Antigravity only): follow the shared file's
+   Effort Selection section — present the recommendation first, labeled
+   `<level> — recommended (<one-line reason>)`, with 1-2 adjacent levels as
+   alternatives. Recommend `low` for a simple, well-scoped pitch/fix,
+   `medium` for routine card verification, `high` only when the draft is
+   itself unusually high-risk. **Whichever agent Verifier A lands on,
+   explicitly tell the user which one (and briefly why) before starting
+   it** — don't fold it in silently.
+4. **Billing-failure fallback**: follow the shared file's "Billing-Failure /
+   Rate-Limit Fallback" section, substituting "verification slot" for
+   "proposal slot." (Verifier B is always Claude, a fixed role, not routed
+   from the shared table.)
 
 - **Verifier B — Claude, the orchestration agent, always.** This one is allowed to
   spin up its own helper agents if the verification prompt is broad enough to
@@ -248,58 +237,15 @@ list` to find them) once the card is pushed.
 
 ### Task Card Template
 
-```
-<TITLE — imperative verb first, e.g. "Add card-skin system with per-skin assets and Settings selector">
-
-<CONTEXT — 1-3 sentences: why this exists, current behavior, acceptance hinge.>
-
-<Universiteit Utrecht cards only — mandatory: **Repo:** `<absolute path, e.g.
-/home/uu/tf-azure-aipf-deployment>` — becomes the card's `repo:` UDA at push
-time (step 9). Omit this line entirely for Guiñotazo/other single-repo cards.>
-
-## Current State (verified)
-
-- `file.ts:NN` — what it contains/does today.
-- Currently X does Y; mechanism is Z.
-- Live test count: N/N (verified by running: `npm run lint && npm run test && npm run build`).
-- Verification output: <key lines from live run>
-
-## Goals
-
-1. <outcome 1 — user-visible>
-2. <outcome 2>
-3. <...>
-
-## Implementation Guidance
-
-- file.ts:NN — change <function> to ...
-- Reuse existing <pattern> at <path> rather than inventing new.
-- Respect <settings/reducer/actions> at <path>.
-- Keep <module> pure (additive exports only via <index>); no GameState mutations.
-- Timing/order: "this runs before X; do not reorder."
-
-## Constraints / Non-Goals
-
-- Do NOT touch <files/modules>.
-- Out of scope: <secondary idea> (separate follow-up card).
-- No new deps unless needed; prefer <existing stack>.
-- Engine purity: bots/UI must not mutate src/engine; additive exports only via src/engine/index.ts.
-
-## Acceptance Criteria
-
-- <observable, verifiable criterion 1>
-- <observable, verifiable criterion 2>
-- All verification commands clean (`npm run lint && npm run test && npm run build`).
-- Existing tests stay <N>/<N> (live count from scan).
-- Keep changes uncommitted unless told otherwise.
-
-<optional>
-## Parent / Depends On
-
-- Parent card: <uuid/title>
-- Gated on: <card title/uuid>
-</optional>
-```
+Use the template at
+[`../shared/card-template.md`](../shared/card-template.md) — same one
+`kanban-task` uses. Fill every applicable section, omit ones that don't
+apply, every file reference needs a line anchor. Its `## Verification Plan`
+section is **mandatory**, and its `## Rollout & Blast Radius` section is
+mandatory whenever this card touches a template/shared-infra repo consumed
+by more than one other repo — see that file for exactly what each requires.
+Its `<Universiteit Utrecht cards only>` repo line and "push time" reference
+map to this mode's step 9 below.
 
 ---
 

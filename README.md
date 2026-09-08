@@ -41,6 +41,14 @@ Restart Claude Code (or start a new session) so it picks up the new skills.
 | `worker` | Executes a kanban task via multi-agent Herdr orchestration with human approval gates. |
 | `worker-eurocontrol` | Eurocontrol-environment variant of `worker` — Claude-only, single hardcoded board, no repo routing. |
 
+`shared/` isn't a skill (no `SKILL.md`) — it's reference docs
+(`agent-routing.md`, `card-template.md`) that `kanban-task`, `worker`,
+`product-owner`, and `kanban-task-eurocontrol` all link to via relative
+paths, so **it must be installed alongside them** (the install commands
+above already do this — `shared/` is just another top-level directory they
+symlink/copy). Don't delete or rename it without updating every skill that
+references it.
+
 ## Prerequisites
 
 Some skills assume tools/services not covered by this repo itself — check the

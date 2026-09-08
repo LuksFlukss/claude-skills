@@ -1,13 +1,13 @@
 ---
 name: worker-eurocontrol
-description: Eurocontrol-environment variant of worker — Claude is the only agent kind installed there (no OpenCode/Big Pickle/MiMo/Nemotron, no Grok, no Google Antigravity), and it's a single hardcoded board with no repo-name routing. Executes a kanban task by decomposing it across one or more Claude-only Herdr agents, verifies, presents for human approval, iterates, marks done. Use this instead of the regular worker skill whenever the task is on the Eurocontrol board.
+description: Eurocontrol-environment variant of worker — Claude is the only agent kind installed there (no OpenCode/Big Pickle/MiMo, no Grok, no Google Antigravity), and it's a single hardcoded board with no repo-name routing. Executes a kanban task by decomposing it across one or more Claude-only Herdr agents, verifies, presents for human approval, iterates, marks done. Use this instead of the regular worker skill whenever the task is on the Eurocontrol board.
 ---
 
 # Worker — Eurocontrol Environment (Claude-Only)
 
 This is the Eurocontrol-specific variant of the regular `worker` skill.
 **Only `claude` is installed as an agent kind in this environment** — no
-OpenCode (Big Pickle / MiMo V2.5 / Nemotron), no Grok, no Google Antigravity.
+OpenCode (Big Pickle / MiMo V2.5), no Grok, no Google Antigravity.
 Every agent dispatch in this skill uses `--kind claude`, full stop. Use the
 regular `worker` skill for Guiñotazo / Universiteit Utrecht work; use this
 one only when the task is on the Eurocontrol board.
@@ -76,7 +76,7 @@ directory throughout.
 **There is no fallback agent kind in this environment.** If a Claude sub-task
 agent is out of credits or rate-limited, **stop that sub-task and tell the
 user** — do not suggest Grok, Google Antigravity, or any OpenCode model
-(Big Pickle/MiMo/Nemotron); none of them are installed here. Offer only, via
+(Big Pickle/MiMo); none of them are installed here. Offer only, via
 `AskUserQuestion`: `Retry the same sub-task later`, `Do this sub-task
 yourself (no sub-agent)`, or `Skip this sub-task for now`.
 
@@ -192,10 +192,13 @@ For each sub-task in the decomposition plan:
 
 2. **Send the composed prompt** (self-contained, no "as discussed"
    references):
-   - Repo path (current working directory), task UUID, card description
-     verbatim.
+   - Repo path (current working directory) and the task UUID — tell the
+     agent to run `task <UUID> export` itself to read the full card rather
+     than pasting the card's full description into the prompt; that avoids
+     re-typing a potentially-long card body into every sub-task's prompt.
    - Sub-task scope (exact files/functions to touch).
-   - Acceptance criteria for this sub-task.
+   - Acceptance criteria **for this sub-task specifically** (a distilled
+     subset of the card's full criteria, not the whole list).
    - Verification command to run.
    - **Constraint**: "Stay in scope. Do not touch unrelated files. Report
      changes and any uncertainties. Do NOT run `backlog review/done`."
